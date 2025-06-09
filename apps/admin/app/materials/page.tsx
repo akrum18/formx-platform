@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -26,6 +26,7 @@ import { getTableColumnClasses } from "@/lib/table-utils"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { CSVImportDialog } from "@/components/csv-import-dialog"
 import { CSVExportDialog } from "@/components/csv-export-dialog"
+import { toast } from "sonner"
 
 interface Material {
   id: string
@@ -34,67 +35,21 @@ interface Material {
   markup: number
   density: number
   unit: string
-  processes: string[]
   active: boolean
+  category_id: string | null
+  supplier: string | null
+  material_grade: string | null
+  specifications: Record<string, any> | null // Processes will be stored here
+  created_at: string
+  updated_at: string
 }
 
-const mockMaterials: Material[] = [
-  {
-    id: "1",
-    name: "Aluminum 6061",
-    cost: 3.5,
-    markup: 25,
-    density: 2.7,
-    unit: "lb",
-    processes: ["CNC Milling", "CNC Turning", "5-Axis"],
-    active: true,
-  },
-  {
-    id: "2",
-    name: "Steel 1018",
-    cost: 2.8,
-    markup: 30,
-    density: 7.87,
-    unit: "lb",
-    processes: ["CNC Milling", "CNC Turning"],
-    active: true,
-  },
-  {
-    id: "3",
-    name: "Titanium Ti-6Al-4V",
-    cost: 45.0,
-    markup: 40,
-    density: 4.43,
-    unit: "lb",
-    processes: ["5-Axis", "CNC Milling"],
-    active: false,
-  },
-  {
-    id: "4",
-    name: "Stainless Steel 316",
-    cost: 4.2,
-    markup: 35,
-    density: 8.0,
-    unit: "lb",
-    processes: ["CNC Milling", "CNC Turning"],
-    active: true,
-  },
-  {
-    id: "5",
-    name: "Brass C360",
-    cost: 6.8,
-    markup: 28,
-    density: 8.5,
-    unit: "lb",
-    processes: ["CNC Turning", "CNC Milling"],
-    active: false,
-  },
-]
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 
 const groupOptions = [
   { value: "active", label: "Status" },
   { value: "unit", label: "Unit" },
-  { value: "processes.0", label: "Primary Process" },
+  { value: "specifications.processes.0", label: "Primary Process" }, // Assuming processes are in specifications
 ]
 
 const materialFieldMappings = {
@@ -104,11 +59,11 @@ const materialFieldMappings = {
   density: { label: "Density (g/cm³)", required: true, type: "number" },
   unit: { label: "Unit", required: false, type: "string" },
   active: { label: "Active", required: false, type: "boolean" },
-  processes: { label: "Compatible Processes", required: false, type: "string" },
+  processes: { label: "Compatible Processes", required: false, type: "string" }, // For CSV import/export
 }
 
 export default function MaterialsPage() {
-  const [materials, setMaterials] = useState<Material[]>(mockMaterials)
+  const [materials, setMaterials] = useState<Material[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null)
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "name", direction: "asc" })
@@ -116,6 +71,35 @@ export default function MaterialsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const fetchMaterials = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        toast.error("Authentication token not found. Please log in.")
+        return
+      }
+      const response = await fetch(`${API_BASE_URL}/api/admin/materials`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data: Material[] = await response.json()
+      setMaterials(data)
+    } catch (error) {
+      console.error("Failed to fetch materials:", error)
+      toast.error("Failed to load materials.")
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchMaterials()
+  }, [fetchMaterials])
 
   const handleSort = (key: string) => {
     setSortConfig((current) => ({
@@ -124,8 +108,52 @@ export default function MaterialsPage() {
     }))
   }
 
-  const toggleMaterial = (id: string) => {
-    setMaterials(materials.map((m) => (m.id === id ? { ...m, active: !m.active } : m)))
+  const toggleMaterial = async (id: string) => {
+    const materialToToggle = materials.find((m) => m.id === id)
+    if (!materialToToggle) return
+
+    setIsSaving(true)
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        toast.error("Authentication token not found. Please log in.")
+        return
+      }
+
+      const updatedMaterial = { ...materialToToggle, active: !materialToToggle.active }
+      const response = await fetch(`${API_BASE_URL}/api/admin/materials/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: updatedMaterial.name,
+          cost: updatedMaterial.cost,
+          markup: updatedMaterial.markup,
+          density: updatedMaterial.density,
+          unit: updatedMaterial.unit,
+          active: updatedMaterial.active,
+          category_id: updatedMaterial.category_id,
+          supplier: updatedMaterial.supplier,
+          material_grade: updatedMaterial.material_grade,
+          specifications: updatedMaterial.specifications,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data: Material = await response.json()
+      setMaterials((prev) => prev.map((m) => (m.id === id ? data : m)))
+      toast.success("Material status updated successfully!")
+    } catch (error) {
+      console.error("Failed to toggle material status:", error)
+      toast.error("Failed to update material status.")
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleEdit = (material: Material) => {
@@ -138,13 +166,129 @@ export default function MaterialsPage() {
     setIsDialogOpen(true)
   }
 
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this material?")) return
+
+    setIsDeleting(true)
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        toast.error("Authentication token not found. Please log in.")
+        return
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/admin/materials/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      setMaterials((prev) => prev.filter((m) => m.id !== id))
+      toast.success("Material deleted successfully!")
+    } catch (error) {
+      console.error("Failed to delete material:", error)
+      toast.error("Failed to delete material.")
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleSaveMaterial = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSaving(true)
+
+    const form = e.target as HTMLFormElement
+    const name = (form.elements.namedItem("name") as HTMLInputElement)?.value
+    const cost = parseFloat((form.elements.namedItem("cost") as HTMLInputElement)?.value)
+    const markup = parseFloat((form.elements.namedItem("markup") as HTMLInputElement)?.value)
+    const density = parseFloat((form.elements.namedItem("density") as HTMLInputElement)?.value)
+    const unit = "lb" // Hardcoded as per mock, adjust if UI allows selection
+    const active = (form.elements.namedItem("active") as HTMLInputElement)?.checked ?? true // Default to true if not found
+
+    const processesCheckboxes = Array.from(form.elements).filter(
+      (el) => (el as HTMLInputElement).type === "checkbox" && (el as HTMLInputElement).id.startsWith("process-"),
+    ) as HTMLInputElement[]
+    const compatibleProcesses = processesCheckboxes.filter((cb) => cb.checked).map((cb) => cb.value)
+
+    const materialData = {
+      name,
+      cost,
+      markup,
+      density,
+      unit,
+      active,
+      specifications: { processes: compatibleProcesses }, // Store processes in specifications
+    }
+
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        toast.error("Authentication token not found. Please log in.")
+        return
+      }
+
+      let response
+      if (editingMaterial) {
+        // Update existing material
+        response = await fetch(`${API_BASE_URL}/api/admin/materials/${editingMaterial.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(materialData),
+        })
+      } else {
+        // Create new material
+        response = await fetch(`${API_BASE_URL}/api/admin/materials`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(materialData),
+        })
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`)
+      }
+
+      const data: Material = await response.json()
+      if (editingMaterial) {
+        setMaterials((prev) => prev.map((m) => (m.id === data.id ? data : m)))
+        toast.success("Material updated successfully!")
+      } else {
+        setMaterials((prev) => [...prev, data])
+        toast.success("Material added successfully!")
+      }
+      setIsDialogOpen(false)
+    } catch (error: any) {
+      console.error("Failed to save material:", error)
+      toast.error(`Failed to save material: ${error.message || "An unexpected error occurred"}`)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const filteredMaterials = materials.filter(
     (material) =>
       material.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      material.processes.some((process) => process.toLowerCase().includes(searchTerm.toLowerCase())),
+      (material.specifications?.processes &&
+        material.specifications.processes.some((process: string) =>
+          process.toLowerCase().includes(searchTerm.toLowerCase()),
+        )),
   )
 
   const sortedMaterials = sortData(filteredMaterials, sortConfig)
+
+  // Adjusting groupData to handle nested properties for processes
   const groupedMaterials = groupData(sortedMaterials, groupBy)
 
   const renderMaterialRow = (material: Material) => (
@@ -155,15 +299,16 @@ export default function MaterialsPage() {
       <TableCell>{material.density} g/cm³</TableCell>
       <TableCell>
         <div className="flex gap-1 flex-wrap">
-          {material.processes.map((process) => (
-            <Badge
-              key={process}
-              variant="secondary"
-              className="text-xs bg-[#d4c273] text-[#fefefe] hover:bg-[#d4c273]/80"
-            >
-              {process}
-            </Badge>
-          ))}
+          {material.specifications?.processes &&
+            material.specifications.processes.map((process: string) => (
+              <Badge
+                key={process}
+                variant="secondary"
+                className="text-xs bg-[#d4c273] text-[#fefefe] hover:bg-[#d4c273]/80"
+              >
+                {process}
+              </Badge>
+            ))}
         </div>
       </TableCell>
       <TableCell>
@@ -189,7 +334,13 @@ export default function MaterialsPage() {
           >
             <Edit className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm" className="hover:bg-red-50 hover:text-red-600">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleDelete(material.id)}
+            className="hover:bg-red-50 hover:text-red-600"
+            disabled={isDeleting}
+          >
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
@@ -218,7 +369,7 @@ export default function MaterialsPage() {
               onSort={handleSort}
               className={columnClasses.cost}
             >
-              Cost per {mockMaterials[0]?.unit}
+              Cost per lb
             </SortableTableHeader>
             <SortableTableHeader
               sortKey="markup"
@@ -253,26 +404,53 @@ export default function MaterialsPage() {
     )
   }
 
-  const handleImport = (importedData: any[]) => {
-    const newMaterials = importedData.map((item, index) => ({
-      id: (Date.now() + index).toString(),
-      name: item.name || "",
-      cost: Number(item.cost) || 0,
-      markup: Number(item.markup) || 0,
-      density: Number(item.density) || 0,
-      unit: item.unit || "lb",
-      processes:
-        typeof item.processes === "string"
-          ? item.processes
-              .split(";")
-              .map((p) => p.trim())
-              .filter(Boolean)
-          : item.processes || [],
-      active: item.active !== undefined ? item.active : true,
-    }))
+  const handleImport = async (importedData: any[]) => {
+    const token = localStorage.getItem("auth_token")
+    if (!token) {
+      toast.error("Authentication token not found. Please log in.")
+      return
+    }
 
-    setMaterials([...materials, ...newMaterials])
-    console.log(`Imported ${newMaterials.length} materials`)
+    for (const item of importedData) {
+      try {
+        const materialData = {
+          name: item.name || "",
+          cost: Number(item.cost) || 0,
+          markup: Number(item.markup) || 0,
+          density: Number(item.density) || 0,
+          unit: item.unit || "lb",
+          active: item.active !== undefined ? item.active : true,
+          specifications: {
+            processes:
+              typeof item.processes === "string"
+                ? item.processes
+                    .split(";")
+                    .map((p) => p.trim())
+                    .filter(Boolean)
+                : item.processes || [],
+          },
+        }
+
+        const response = await fetch(`${API_BASE_URL}/api/admin/materials`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(materialData),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.detail || `Failed to import material ${item.name}: HTTP error! status: ${response.status}`)
+        }
+        toast.success(`Material '${item.name}' imported successfully.`)
+      } catch (error: any) {
+        console.error(`Failed to import material '${item.name}':`, error)
+        toast.error(`Failed to import material '${item.name}': ${error.message || "An unexpected error occurred"}`)
+      }
+    }
+    fetchMaterials() // Re-fetch all materials after import
   }
 
   return (
@@ -347,7 +525,7 @@ export default function MaterialsPage() {
                 <div>
                   <p className="text-sm font-medium text-[#908d8d]">Avg Markup</p>
                   <p className="text-xl font-bold text-[#525253]">
-                    {Math.round(materials.reduce((sum, m) => sum + m.markup, 0) / materials.length)}%
+                    {materials.length > 0 ? Math.round(materials.reduce((sum, m) => sum + m.markup, 0) / materials.length) : 0}%
                   </p>
                 </div>
               </div>
@@ -360,7 +538,11 @@ export default function MaterialsPage() {
                 <div>
                   <p className="text-sm font-medium text-[#908d8d]">Avg Cost</p>
                   <p className="text-xl font-bold text-[#525253]">
-                    ${(materials.reduce((sum, m) => sum + m.cost, 0) / materials.length).toFixed(2)}
+                    ${
+                      materials.length > 0
+                        ? (materials.reduce((sum, m) => sum + m.cost, 0) / materials.length).toFixed(2)
+                        : (0).toFixed(2)
+                    }
                   </p>
                 </div>
               </div>
@@ -436,80 +618,108 @@ export default function MaterialsPage() {
                 Configure material properties and pricing parameters
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-6 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="name" className="text-sm font-medium text-[#525253]">
-                  Material Name
-                </Label>
-                <Input
-                  id="name"
-                  defaultValue={editingMaterial?.name}
-                  className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+            <form id="material-form" onSubmit={handleSaveMaterial}>
+              <div className="grid gap-6 py-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="cost" className="text-sm font-medium text-[#525253]">
-                    Cost per lb
+                  <Label htmlFor="name" className="text-sm font-medium text-[#525253]">
+                    Material Name
                   </Label>
                   <Input
-                    id="cost"
+                    id="name"
+                    name="name"
+                    defaultValue={editingMaterial?.name}
+                    className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="cost" className="text-sm font-medium text-[#525253]">
+                      Cost per lb
+                    </Label>
+                    <Input
+                      id="cost"
+                      name="cost"
+                      type="number"
+                      step="0.01"
+                      defaultValue={editingMaterial?.cost}
+                      className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
+                      required
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="markup" className="text-sm font-medium text-[#525253]">
+                      Markup %
+                    </Label>
+                    <Input
+                      id="markup"
+                      name="markup"
+                      type="number"
+                      defaultValue={editingMaterial?.markup}
+                      className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="density" className="text-sm font-medium text-[#525253]">
+                    Density (g/cm³)
+                  </Label>
+                  <Input
+                    id="density"
+                    name="density"
                     type="number"
                     step="0.01"
-                    defaultValue={editingMaterial?.cost}
+                    defaultValue={editingMaterial?.density}
                     className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
+                    required
                   />
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="markup" className="text-sm font-medium text-[#525253]">
-                    Markup %
+                <div className="grid gap-3">
+                  <Label className="text-sm font-medium text-[#525253]">Compatible Processes</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {["CNC Milling", "CNC Turning", "5-Axis", "Wire EDM"].map((process) => (
+                      <div key={process} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`process-${process}`}
+                          value={process}
+                          defaultChecked={editingMaterial?.specifications?.processes?.includes(process)}
+                        />
+                        <Label htmlFor={`process-${process}`} className="text-sm text-[#525253]">
+                          {process}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="active"
+                    name="active"
+                    defaultChecked={editingMaterial?.active ?? true}
+                  />
+                  <Label htmlFor="active" className="text-sm font-medium text-[#525253]">
+                    Active
                   </Label>
-                  <Input
-                    id="markup"
-                    type="number"
-                    defaultValue={editingMaterial?.markup}
-                    className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
-                  />
                 </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="density" className="text-sm font-medium text-[#525253]">
-                  Density (g/cm³)
-                </Label>
-                <Input
-                  id="density"
-                  type="number"
-                  step="0.01"
-                  defaultValue={editingMaterial?.density}
-                  className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
-                />
-              </div>
-              <div className="grid gap-3">
-                <Label className="text-sm font-medium text-[#525253]">Compatible Processes</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  {["CNC Milling", "CNC Turning", "5-Axis", "Wire EDM"].map((process) => (
-                    <div key={process} className="flex items-center space-x-2">
-                      <Checkbox id={process} defaultChecked={editingMaterial?.processes.includes(process)} />
-                      <Label htmlFor={process} className="text-sm text-[#525253]">
-                        {process}
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setIsDialogOpen(false)}
-                className="border-[#908d8d] text-[#525253] hover:bg-[#e8dcaa]"
-              >
-                Cancel
-              </Button>
-              <Button type="submit" className="bg-[#d4c273] hover:bg-[#d4c273]/80 text-[#fefefe]">
-                Save Material
-              </Button>
-            </DialogFooter>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsDialogOpen(false)}
+                  className="border-[#908d8d] text-[#525253] hover:bg-[#e8dcaa]"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="bg-[#d4c273] hover:bg-[#d4c273]/80 text-[#fefefe]"
+                  disabled={isSaving}
+                >
+                  {isSaving ? "Saving..." : "Save Material"}
+                </Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
 

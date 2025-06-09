@@ -12,6 +12,10 @@ import { Building2, Eye, EyeOff, AlertCircle, Lock } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 
+// Assuming your backend API base URL is configured in a .env file
+// For development, it's typically http://localhost:8000
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+
 export default function LoginPage() {
   const [formData, setFormData] = useState({
     email: "",
@@ -28,34 +32,72 @@ export default function LoginPage() {
     setError("")
 
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded", // FastAPI expects this for OAuth2PasswordRequestForm
+        },
+        body: new URLSearchParams({
+          username: formData.email,
+          password: formData.password,
+        }).toString(),
+      });
 
-      // Mock authentication - in real app, this would be an API call
-      if (formData.email === "admin@manufacturing.com" && formData.password === "Manu123") {
-        // Store auth token (in real app, use secure storage)
-        localStorage.setItem("auth_token", "mock_token_123")
-        localStorage.setItem(
-          "user_data",
-          JSON.stringify({
-            id: "1",
-            email: formData.email,
-            name: "Admin User",
-            role: "admin",
-            permissions: ["materials", "processes", "routings", "finishes", "margins", "features", "versions"],
-          }),
-        )
-
-        router.push("/")
-      } else {
-        setError("Invalid email or password")
+      if (!response.ok) {
+        const errorData = await response.json();
+        setError(errorData.detail || "Login failed");
+        return; // Stop execution if login failed
       }
+
+      const data = await response.json();
+      const accessToken = data.access_token;
+
+      // Store auth token in localStorage for client-side access
+      localStorage.setItem("auth_token", accessToken);
+
+      // Fetch user data including role and permissions after successful login
+      const userResponse = await fetch(`${API_BASE_URL}/api/auth/me`, {
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!userResponse.ok) {
+        console.error("Failed to fetch user data after login");
+        // Even if user data fetch fails, we might proceed if token is valid
+        // Or redirect to login if crucial data is missing. For now, log and proceed.
+        localStorage.removeItem("auth_token"); // Clear token if user data can't be fetched
+        setError("Login successful, but failed to retrieve user data. Please try again.");
+        return;
+      }
+
+      const userData = await userResponse.json();
+
+      // Assuming backend /api/auth/me returns role and permissions
+      // Adjust the structure based on your actual backend response
+      localStorage.setItem(
+        "user_data",
+        JSON.stringify({
+          id: userData.id,
+          email: userData.email,
+          name: userData.name,
+          role: userData.role, // Assuming role is returned
+          permissions: userData.permissions || ["materials", "processes", "routings", "finishes", "margins", "features", "versions"], // Default or actual permissions
+        }),
+      );
+
+      // Redirect to the admin dashboard
+      router.push("/");
+
     } catch (err) {
-      setError("An error occurred during login")
+      console.error("An error occurred during login:", err);
+      setError("An unexpected error occurred during login.");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#fefefe] to-[#e8dcaa]/20 flex items-center justify-center p-4">
@@ -157,15 +199,15 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          {/* Demo Credentials */}
+          {/* Demo Credentials - Keep for reference during testing */}
           <div className="mt-6 p-4 bg-[#e8dcaa]/20 rounded-xl border border-[#e8dcaa]">
             <p className="text-sm font-medium text-[#525253] mb-2">Demo Credentials:</p>
             <div className="text-sm text-[#908d8d] space-y-1">
               <p>
-                <strong>Email:</strong> admin@manufacturing.com
+                <strong>Email:</strong> admin@formx.com
               </p>
               <p>
-                <strong>Password:</strong> Manu123
+                <strong>Password:</strong> password123
               </p>
             </div>
           </div>
