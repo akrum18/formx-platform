@@ -8,83 +8,67 @@ import DashboardStats from "@/components/dashboard/dashboard-stats"
 import ActiveRFQs from "@/components/dashboard/active-rfqs"
 import ActiveQuotes from "@/components/dashboard/active-quotes"
 import OrderHistory from "@/components/dashboard/order-history"
+import { cookies } from "next/headers" // Import cookies
 
 export const metadata: Metadata = {
   title: "Dashboard | Form(X)",
   description: "Manufacturing quote and order management dashboard",
 }
 
-// This would be replaced with a real data fetching function in a production app
-async function getDashboardData() {
-  // Simulate API call
-  await new Promise((resolve) => setTimeout(resolve, 300))
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-  return {
-    stats: {
-      activeRfqs: 8,
-      pendingQuotes: 12,
-      activeOrders: 5,
-      completedOrders: 23,
-      rfqsThisMonth: 3,
-      quotesThisMonth: 7,
-      ordersThisMonth: 2,
-      completedThisMonth: 8,
-    },
-    rfqs: [
-      {
-        id: "RFQ-2024-001",
-        name: "Aluminum Housing",
-        date: "May 15, 2024",
-        parts: 3,
-        status: "Draft",
+async function getDashboardData() {
+  const cookieStore = cookies()
+  const authToken = cookieStore.get("auth_token")?.value
+
+  if (!authToken) {
+    // If no auth token, redirect to login (handled by getCurrentUser already, but good to be explicit)
+    redirect("/auth/login")
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/dashboard`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${authToken}`,
       },
-      {
-        id: "RFQ-2024-002",
-        name: "Steel Brackets",
-        date: "May 14, 2024",
-        parts: 5,
-        status: "Submitted",
-      },
-      {
-        id: "RFQ-2024-003",
-        name: "Plastic Components",
-        date: "May 13, 2024",
-        parts: 2,
-        status: "In Review",
-      },
-    ],
-    quotes: [
-      {
-        id: "QT-2024-001",
-        name: "Aluminum Bracket",
-        date: "May 12, 2024",
-        total: 1250.0,
-        status: "Approved",
-      },
-      {
-        id: "QT-2024-002",
-        name: "Custom Housing",
-        date: "May 10, 2024",
-        total: 890.0,
-        status: "In Production",
-      },
-    ],
-    orders: [
-      {
-        id: "ORD-2024-001",
-        name: "Steel Components",
-        date: "May 8, 2024",
-        total: 2150.0,
-        status: "Completed",
-      },
-      {
-        id: "ORD-2024-002",
-        name: "Titanium Parts",
-        date: "May 5, 2024",
-        total: 3200.0,
-        status: "Completed",
-      },
-    ],
+      // Ensure no-store to always fetch fresh data on server-side
+      cache: "no-store", 
+    })
+
+    if (!response.ok) {
+      // Handle API errors, e.g., 401 Unauthorized, 403 Forbidden
+      if (response.status === 401 || response.status === 403) {
+        console.error("Authentication error fetching dashboard data:", response.status)
+        // Optionally clear cookies and redirect to login if token is invalid/expired
+        cookieStore.delete("auth_token")
+        cookieStore.delete("user_type")
+        redirect("/auth/login")
+      }
+      const errorData = await response.json()
+      console.error("Failed to fetch dashboard data:", errorData.error || response.statusText)
+      // Return empty data or throw an error based on desired behavior
+      return {
+        stats: {},
+        rfqs: [],
+        quotes: [],
+        orders: [],
+      }
+    }
+
+    const data = await response.json()
+    return data
+
+  } catch (error) {
+    console.error("Error fetching dashboard data:", error)
+    // Return empty data on network or other unexpected errors
+    return {
+      stats: {},
+      rfqs: [],
+      quotes: [],
+      orders: [],
+    }
   }
 }
 

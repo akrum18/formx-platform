@@ -101,7 +101,9 @@ export default function ActiveRFQs({ rfqs }: ActiveRFQsProps) {
           <p className="text-muted-foreground text-sm max-w-md mx-auto">
             We couldn't find any RFQs matching your search criteria. Try adjusting your filters or create a new RFQ.
           </p>
-          <Button className="mt-4 bg-brand-dark-gold hover:bg-brand-dark-gold/90 text-white">Create New RFQ</Button>
+          <Button className="mt-4 bg-brand-dark-gold hover:bg-brand-dark-gold/90 text-white" asChild>
+            <Link href="/rfq/new">Create New RFQ</Link>
+          </Button>
         </div>
       ) : (
         <div className="overflow-x-auto">

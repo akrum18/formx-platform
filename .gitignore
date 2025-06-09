@@ -1,0 +1,61 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Dependency directories
+node_modules/
+.pnpm-store/ # pnpm's global store, if not outside the repo
+
+# Production build output
+.next/
+dist/
+build/
+out/
+
+# Environments
+.env
+.env*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Local development
+.DS_Store
+.vscode/
+.idea/
+*.tgz
+*.zip
+*.rar
+
+# Next.js specific
+.next/
+.turbo/ # Turborepo cache, if used
+
+# pnpm specific
+pnpm-lock.yaml
+
+# Caches
+.cache/
+
+# Testing
+/coverage
+/.nyc_output
+/test-results.xml
+
+# IDEs and editors
+.history/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+.Trash/
+Thumbs.db
+
+# Misc
+*.swp
+*.swo

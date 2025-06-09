@@ -1,28 +1,6 @@
 import { cookies } from "next/headers"
 
-// Mock user database
-const users = [
-  {
-    id: "1",
-    name: "Demo User",
-    email: "demo@formx.com",
-    password: "password123",
-    company: "FormX Demo",
-  },
-]
-
-// Mock partner database
-const partners = [
-  {
-    id: "p1",
-    name: "Partner Company",
-    email: "partner@example.com",
-    password: "partner123",
-    partnerCode: "PARTNER001",
-    company: "Partner Solutions Inc.",
-    isActive: true,
-  },
-]
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
 
 export async function getCurrentUser() {
   const cookieStore = await cookies()
@@ -37,33 +15,38 @@ export async function getCurrentUser() {
     return null
   }
 
-  if (userType.value === "partner") {
-    const partner = partners.find((p) => p.id === authToken.value)
-    if (partner) {
-      console.log("getCurrentUser - Found partner:", partner.name)
-      return {
-        id: partner.id,
-        name: partner.name,
-        email: partner.email,
-        company: partner.company,
-        type: "partner" as const,
-        partnerCode: partner.partnerCode,
-      }
-    }
-  } else {
-    const user = users.find((u) => u.id === authToken.value)
-    if (user) {
-      console.log("getCurrentUser - Found user:", user.name)
-      return {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        company: user.company,
-        type: "user" as const,
-      }
-    }
-  }
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${authToken.value}`,
+      },
+      // Cache: 'no-store' is important for dynamic data in Next.js Server Components
+      cache: 'no-store',
+    })
 
-  console.log("getCurrentUser - No user found")
-  return null
+    if (!response.ok) {
+      // If token is invalid or expired, return null.
+      // Cookies must be cleared in a Server Action or Route Handler.
+      console.error("Failed to fetch current user from backend:", response.status, await response.text());
+      return null;
+    }
+
+    const user = await response.json()
+
+    console.log("getCurrentUser - Found user from backend:", user.email)
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      company: user.company,
+      type: userType.value as "user" | "partner", // Ensure type is correct
+      // Add other fields relevant to user or partner if needed
+      ...(userType.value === "partner" && { partnerCode: user.partner_code }),
+    }
+  } catch (error) {
+    console.error("Error fetching current user from backend:", error)
+    return null
+  }
 }
