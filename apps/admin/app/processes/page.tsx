@@ -4,7 +4,7 @@ import { DialogFooter } from "@/components/ui/dialog"
 import { CSVImportDialog } from "@/components/csv-import-dialog"
 import { CSVExportDialog } from "@/components/csv-export-dialog"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
-import { Plus, Edit, Settings, Upload, Download, Wrench, Search, Filter } from "lucide-react"
+import { Plus, Edit, Settings, Upload, Download, Wrench, Search, Filter, Trash2 } from "lucide-react"
 import { SortableTableHeader } from "@/components/sortable-table-header"
 import { TableControls } from "@/components/table-controls"
 import { GroupedTableSection } from "@/components/grouped-table-section"
@@ -22,91 +22,53 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox"
 import { CategoryManager } from "@/components/category-manager"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import { toast } from "sonner"
 
 interface Process {
   id: string
   name: string
-  setupTime: number
-  hourlyRate: number
-  minimumCost: number
-  complexityMultiplier: number
+  setup_time: number
+  hourly_rate: number
+  minimum_cost: number
+  complexity_multiplier: number
   active: boolean
-  category: string
+  category_id: string | null
+  description: string | null
+  equipment_required: string[] | null
+  skill_level: string | null
+  created_at: string
+  updated_at: string
 }
 
-const mockProcesses: Process[] = [
-  {
-    id: "1",
-    name: "CNC Milling",
-    setupTime: 30,
-    hourlyRate: 85,
-    minimumCost: 50,
-    complexityMultiplier: 1.2,
-    active: true,
-    category: "Machining",
-  },
-  {
-    id: "2",
-    name: "CNC Turning",
-    setupTime: 20,
-    hourlyRate: 75,
-    minimumCost: 40,
-    complexityMultiplier: 1.0,
-    active: true,
-    category: "Machining",
-  },
-  {
-    id: "3",
-    name: "5-Axis CNC",
-    setupTime: 45,
-    hourlyRate: 120,
-    minimumCost: 100,
-    complexityMultiplier: 1.8,
-    active: true,
-    category: "Advanced Machining",
-  },
-  {
-    id: "4",
-    name: "Wire EDM",
-    setupTime: 60,
-    hourlyRate: 95,
-    minimumCost: 75,
-    complexityMultiplier: 1.5,
-    active: false,
-    category: "EDM",
-  },
-  {
-    id: "5",
-    name: "Sinker EDM",
-    setupTime: 90,
-    hourlyRate: 110,
-    minimumCost: 100,
-    complexityMultiplier: 2.0,
-    active: true,
-    category: "EDM",
-  },
-]
+interface Category {
+  id: string
+  name: string
+  type: string
+}
 
-const defaultCategories = ["Machining", "Advanced Machining", "EDM", "Additive", "Finishing"]
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"
 
 const groupOptions = [
   { value: "active", label: "Status" },
-  { value: "category", label: "Category" },
+  { value: "category_id", label: "Category" }, // Group by category_id, will need to map to name for display
 ]
 
 const processFieldMappings = {
   name: { label: "Process Name", required: true, type: "string" },
-  category: { label: "Category", required: true, type: "select", options: defaultCategories },
-  setupTime: { label: "Setup Time (min)", required: true, type: "number" },
-  hourlyRate: { label: "Hourly Rate ($)", required: true, type: "number" },
-  minimumCost: { label: "Minimum Cost ($)", required: true, type: "number" },
-  complexityMultiplier: { label: "Complexity Multiplier", required: true, type: "number" },
+  category_id: { label: "Category ID", required: true, type: "string" }, // For CSV, will be UUID
+  setup_time: { label: "Setup Time (min)", required: true, type: "number" },
+  hourly_rate: { label: "Hourly Rate ($)", required: true, type: "number" },
+  minimum_cost: { label: "Minimum Cost ($)", required: true, type: "number" },
+  complexity_multiplier: { label: "Complexity Multiplier", required: true, type: "number" },
   active: { label: "Active", required: false, type: "boolean" },
+  description: { label: "Description", required: false, type: "string" },
+  equipment_required: { label: "Equipment Required (semicolon-separated)", required: false, type: "string" },
+  skill_level: { label: "Skill Level", required: false, type: "string" },
 }
 
 export default function ProcessesPage() {
-  const [processes, setProcesses] = useState<Process[]>(mockProcesses)
-  const [categories, setCategories] = useState<string[]>(defaultCategories)
+  const [processes, setProcesses] = useState<Process[]>([]) // Reverted to empty array
+  const [categories, setCategories] = useState<Category[]>([]) // Reverted to empty array
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
   const [editingProcess, setEditingProcess] = useState<Process | null>(null)
@@ -115,6 +77,63 @@ export default function ProcessesPage() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  const [isSaving, setIsSaving] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const fetchProcesses = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        toast.error("Authentication token not found. Please log in.")
+        return
+      }
+      const response = await fetch(`${API_BASE_URL}/api/admin/processes`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data: Process[] = await response.json()
+      setProcesses(data)
+    } catch (error) {
+      console.error("Failed to fetch processes:", error)
+      toast.error("Failed to load processes.")
+    }
+  }, [])
+
+  const fetchCategories = useCallback(async () => {
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        toast.error("Authentication token not found. Please log in.")
+        return
+      }
+      const response = await fetch(`${API_BASE_URL}/api/admin/categories`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data: Category[] = await response.json()
+      setCategories(data.filter(cat => cat.type === 'process')) // Filter for process categories
+    } catch (error) {
+      console.error("Failed to fetch categories:", error)
+      toast.error("Failed to load categories.")
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchProcesses()
+    fetchCategories()
+  }, [fetchProcesses, fetchCategories])
+
+  const getCategoryName = (categoryId: string | null) => {
+    return categories.find(cat => cat.id === categoryId)?.name || "Uncategorized"
+  }
 
   const handleSort = (key: string) => {
     setSortConfig((current) => ({
@@ -133,61 +152,244 @@ export default function ProcessesPage() {
     setIsDialogOpen(true)
   }
 
-  const handleSave = (processData: Partial<Process>) => {
-    if (editingProcess) {
-      setProcesses(processes.map((p) => (p.id === editingProcess.id ? { ...p, ...processData } : p)))
-    } else {
-      const newProcess: Process = {
-        id: Date.now().toString(),
-        name: processData.name || "",
-        setupTime: processData.setupTime || 0,
-        hourlyRate: processData.hourlyRate || 0,
-        minimumCost: processData.minimumCost || 0,
-        complexityMultiplier: processData.complexityMultiplier || 1.0,
-        active: processData.active ?? true,
-        category: processData.category || categories[0],
-      }
-      setProcesses([...processes, newProcess])
+  const handleSaveProcess = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSaving(true)
+
+    const form = e.target as HTMLFormElement
+    const name = (form.elements.namedItem("name") as HTMLInputElement)?.value
+    const setup_time = parseInt((form.elements.namedItem("setup_time") as HTMLInputElement)?.value)
+    const hourly_rate = parseFloat((form.elements.namedItem("hourly_rate") as HTMLInputElement)?.value)
+    const minimum_cost = parseFloat((form.elements.namedItem("minimum_cost") as HTMLInputElement)?.value)
+    const complexity_multiplier = parseFloat((form.elements.namedItem("complexity_multiplier") as HTMLInputElement)?.value)
+    const category_id = (form.elements.namedItem("category_id") as HTMLSelectElement)?.value || null
+    const active = (form.elements.namedItem("active") as HTMLInputElement)?.checked ?? true
+
+    const processData = {
+      name,
+      setup_time,
+      hourly_rate,
+      minimum_cost,
+      complexity_multiplier,
+      active,
+      category_id,
     }
-    setIsDialogOpen(false)
-  }
 
-  const toggleProcess = (id: string) => {
-    setProcesses(processes.map((p) => (p.id === id ? { ...p, active: !p.active } : p)))
-  }
-
-  const handleCategoriesUpdate = (newCategories: string[]) => {
-    setCategories(newCategories)
-    const updatedProcesses = processes.map((process) => {
-      if (!newCategories.includes(process.category)) {
-        return { ...process, category: newCategories[0] || "Uncategorized" }
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        toast.error("Authentication token not found. Please log in.")
+        return
       }
-      return process
-    })
-    setProcesses(updatedProcesses)
+
+      let response
+      if (editingProcess) {
+        response = await fetch(`${API_BASE_URL}/api/admin/processes/${editingProcess.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(processData),
+        })
+      } else {
+        response = await fetch(`${API_BASE_URL}/api/admin/processes`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(processData),
+        })
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`)
+      }
+
+      const data: Process = await response.json()
+      if (editingProcess) {
+        setProcesses((prev) => prev.map((p) => (p.id === data.id ? data : p)))
+        toast.success("Process updated successfully!")
+      } else {
+        setProcesses((prev) => [...prev, data])
+        toast.success("Process added successfully!")
+      }
+      setIsDialogOpen(false)
+    } catch (error: any) {
+      console.error("Failed to save process:", error)
+      toast.error(`Failed to save process: ${error.message || "An unexpected error occurred"}`)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const toggleProcess = async (id: string) => {
+    const processToToggle = processes.find((p) => p.id === id)
+    if (!processToToggle) return
+
+    setIsSaving(true)
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        toast.error("Authentication token not found. Please log in.")
+        return
+      }
+
+      const updatedProcess = { ...processToToggle, active: !processToToggle.active }
+      const response = await fetch(`${API_BASE_URL}/api/admin/processes/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: updatedProcess.name,
+          setup_time: updatedProcess.setup_time,
+          hourly_rate: updatedProcess.hourly_rate,
+          minimum_cost: updatedProcess.minimum_cost,
+          complexity_multiplier: updatedProcess.complexity_multiplier,
+          active: updatedProcess.active,
+          category_id: updatedProcess.category_id,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data: Process = await response.json()
+      setProcesses((prev) => prev.map((p) => (p.id === id ? data : p)))
+      toast.success("Process status updated successfully!")
+    } catch (error) {
+      console.error("Failed to toggle process status:", error)
+      toast.error("Failed to update process status.")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this process?")) return
+
+    setIsDeleting(true)
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (!token) {
+        toast.error("Authentication token not found. Please log in.")
+        return
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/admin/processes/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      setProcesses((prev) => prev.filter((p) => p.id !== id))
+      toast.success("Process deleted successfully!")
+    } catch (error) {
+      console.error("Failed to delete process:", error)
+      toast.error("Failed to delete process.")
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+ const handleCategoriesUpdate = async (newCategoryNames: string[]) => {
+    const token = localStorage.getItem("auth_token")
+    if (!token) {
+      toast.error("Authentication token not found. Please log in.")
+      return
+    }
+
+    const existingCategoryNames = categories.map(cat => cat.name);
+
+    // Categories to add
+    const categoriesToAdd = newCategoryNames.filter(name => !existingCategoryNames.includes(name));
+
+    // Categories to remove
+    const categoriesToRemove = existingCategoryNames.filter(name => !newCategoryNames.includes(name));
+
+    // Collect promises for API calls
+    const addPromises = categoriesToAdd.map(name =>
+      fetch(`${API_BASE_URL}/api/admin/categories`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name, type: 'process' }),
+      })
+        .then(async response => {
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `Failed to add category ${name}: HTTP error! status: ${response.status}`);
+          }
+          toast.success(`Category '${name}' added successfully.`);
+        })
+        .catch((error) => {
+          console.error(`Failed to add category '${name}':`, error);
+          toast.error(`Failed to add category '${name}': ${error.message || "An unexpected error occurred"}`);
+        })
+    );
+
+    const removePromises = categoriesToRemove.map(name => {
+      const categoryToDelete = categories.find(cat => cat.name === name && cat.type === 'process');
+      if (!categoryToDelete) return Promise.resolve();
+      return fetch(`${API_BASE_URL}/api/admin/categories/${categoryToDelete.id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      })
+        .then(async response => {
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `Failed to delete category ${name}: HTTP error! status: ${response.status}`);
+          }
+          toast.success(`Category '${name}' deleted successfully.`);
+        })
+        .catch((error) => {
+          console.error(`Failed to delete category '${name}':`, error);
+          toast.error(`Failed to delete category '${name}': ${error.message || "An unexpected error occurred"}`);
+        });
+    });
+
+    // Await all API calls
+    await Promise.all([...addPromises, ...removePromises]);
+    // Re-fetch categories after all updates
+    await fetchCategories();
   }
 
   const filteredProcesses = processes.filter(
     (process) =>
       process.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      process.category.toLowerCase().includes(searchTerm.toLowerCase()),
+      getCategoryName(process.category_id).toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
   const sortedProcesses = sortData(filteredProcesses, sortConfig)
-  const groupedProcesses = groupData(sortedProcesses, groupBy)
+
+  const groupedProcesses = groupData(sortedProcesses, groupBy === 'category_id' ? 'category_id' : groupBy)
 
   const renderProcessRow = (process: Process) => (
     <TableRow key={process.id} className="hover:bg-[#e8dcaa]/20 transition-colors">
       <TableCell className="font-medium text-slate-900">{process.name}</TableCell>
       <TableCell>
         <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
-          {process.category}
+          {getCategoryName(process.category_id)}
         </Badge>
       </TableCell>
-      <TableCell>{process.setupTime} min</TableCell>
-      <TableCell className="font-mono">${process.hourlyRate}/hr</TableCell>
-      <TableCell className="font-mono">${process.minimumCost}</TableCell>
-      <TableCell className="font-medium">{process.complexityMultiplier}x</TableCell>
+      <TableCell>{process.setup_time} min</TableCell>
+      <TableCell className="font-mono">${process.hourly_rate}/hr</TableCell>
+      <TableCell className="font-mono">${process.minimum_cost}</TableCell>
+      <TableCell className="font-medium">{process.complexity_multiplier}x</TableCell>
       <TableCell>
         <div className="flex items-center space-x-3">
           <Switch checked={process.active} onCheckedChange={() => toggleProcess(process.id)} />
@@ -202,14 +404,25 @@ export default function ProcessesPage() {
         </div>
       </TableCell>
       <TableCell>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => handleEdit(process)}
-          className="hover:bg-[#d4c273]/20 hover:text-[#525253]"
-        >
-          <Edit className="h-4 w-4" />
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleEdit(process)}
+            className="hover:bg-[#d4c273]/20 hover:text-[#525253]"
+          >
+            <Edit className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => handleDelete(process.id)}
+            className="hover:bg-red-50 hover:text-red-600"
+            disabled={isDeleting}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </TableCell>
     </TableRow>
   )
@@ -230,7 +443,7 @@ export default function ProcessesPage() {
               Process
             </SortableTableHeader>
             <SortableTableHeader
-              sortKey="category"
+              sortKey="category_id"
               currentSort={sortConfig}
               onSort={handleSort}
               className={columnClasses.category}
@@ -238,7 +451,7 @@ export default function ProcessesPage() {
               Category
             </SortableTableHeader>
             <SortableTableHeader
-              sortKey="setupTime"
+              sortKey="setup_time"
               currentSort={sortConfig}
               onSort={handleSort}
               className={columnClasses.setupTime}
@@ -246,7 +459,7 @@ export default function ProcessesPage() {
               Setup Time
             </SortableTableHeader>
             <SortableTableHeader
-              sortKey="hourlyRate"
+              sortKey="hourly_rate"
               currentSort={sortConfig}
               onSort={handleSort}
               className={columnClasses.hourlyRate}
@@ -254,7 +467,7 @@ export default function ProcessesPage() {
               Hourly Rate
             </SortableTableHeader>
             <SortableTableHeader
-              sortKey="minimumCost"
+              sortKey="minimum_cost"
               currentSort={sortConfig}
               onSort={handleSort}
               className={columnClasses.minimumCost}
@@ -262,7 +475,7 @@ export default function ProcessesPage() {
               Minimum Cost
             </SortableTableHeader>
             <SortableTableHeader
-              sortKey="complexityMultiplier"
+              sortKey="complexity_multiplier"
               currentSort={sortConfig}
               onSort={handleSort}
               className={columnClasses.complexity}
@@ -285,20 +498,57 @@ export default function ProcessesPage() {
     )
   }
 
-  const handleImport = (importedData: any[]) => {
-    const newProcesses = importedData.map((item, index) => ({
-      id: (Date.now() + index).toString(),
-      name: item.name || "",
-      category: item.category || categories[0] || "Uncategorized",
-      setupTime: Number(item.setupTime) || 0,
-      hourlyRate: Number(item.hourlyRate) || 0,
-      minimumCost: Number(item.minimumCost) || 0,
-      complexityMultiplier: Number(item.complexityMultiplier) || 1.0,
-      active: item.active !== undefined ? item.active : true,
-    }))
+  const handleImport = async (importedData: any[]) => {
+    const token = localStorage.getItem("auth_token")
+    if (!token) {
+      toast.error("Authentication token not found. Please log in.")
+      return
+    }
 
-    setProcesses([...processes, ...newProcesses])
-    console.log(`Imported ${newProcesses.length} processes`)
+    for (const item of importedData) {
+      try {
+        // Find category ID by name, or default to first available category if not found
+        const category = categories.find(cat => cat.name.toLowerCase() === (item.category || '').toLowerCase());
+        const category_id = category ? category.id : (categories.length > 0 ? categories[0].id : null);
+
+        const processData = {
+          name: item.name || "",
+          setup_time: Number(item.setupTime) || 0,
+          hourly_rate: Number(item.hourlyRate) || 0,
+          minimum_cost: Number(item.minimumCost) || 0,
+          complexity_multiplier: Number(item.complexityMultiplier) || 1.0,
+          active: item.active !== undefined ? item.active : true,
+          category_id: category_id, // Use category_id
+          description: item.description || null,
+         equipment_required: typeof item.equipment_required === "string"
+  ? item.equipment_required
+      .split(';')
+      .map((s: string) => s.trim())
+      .filter(Boolean)
+  : null,
+          skill_level: item.skill_level || null,
+        }
+
+        const response = await fetch(`${API_BASE_URL}/api/admin/processes`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(processData),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.detail || `Failed to import process ${item.name}: HTTP error! status: ${response.status}`)
+        }
+        toast.success(`Process '${item.name}' imported successfully.`)
+      } catch (error: any) {
+        console.error(`Failed to import process '${item.name}':`, error)
+        toast.error(`Failed to import process '${item.name}': ${error.message || "An unexpected error occurred"}`)
+      }
+    }
+    fetchProcesses() // Re-fetch all processes after import
   }
 
   return (
@@ -394,7 +644,7 @@ export default function ProcessesPage() {
                 <div>
                   <p className="text-sm font-medium text-slate-600">Avg Rate</p>
                   <p className="text-xl font-bold text-slate-900">
-                    ${Math.round(processes.reduce((sum, p) => sum + p.hourlyRate, 0) / processes.length)}/hr
+                    {processes.length > 0 ? Math.round(processes.reduce((sum, p) => sum + p.hourly_rate, 0) / processes.length) : 0}/hr
                   </p>
                 </div>
               </div>
@@ -447,7 +697,7 @@ export default function ProcessesPage() {
                   <GroupedTableSection
                     key={groupValue}
                     groupKey={groupBy}
-                    groupValue={groupValue}
+                    groupValue={groupBy === 'category_id' ? getCategoryName(groupValue) : groupValue}
                     itemCount={groupProcesses.length}
                   >
                     {renderTable(groupProcesses, true, true)}
@@ -468,22 +718,7 @@ export default function ProcessesPage() {
               </DialogTitle>
               <DialogDescription className="text-slate-600">Configure process parameters and pricing</DialogDescription>
             </DialogHeader>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                const formData = new FormData(e.currentTarget)
-                const processData = {
-                  name: formData.get("name") as string,
-                  setupTime: Number(formData.get("setupTime")),
-                  hourlyRate: Number(formData.get("hourlyRate")),
-                  minimumCost: Number(formData.get("minimumCost")),
-                  complexityMultiplier: Number(formData.get("complexityMultiplier")),
-                  category: formData.get("category") as string,
-                  active: formData.get("active") === "on",
-                }
-                handleSave(processData)
-              }}
-            >
+            <form id="process-form" onSubmit={handleSaveProcess}>
               <div className="grid gap-6 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="name" className="text-sm font-medium text-slate-700">
@@ -498,17 +733,17 @@ export default function ProcessesPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="category" className="text-sm font-medium text-slate-700">
+                  <Label htmlFor="category_id" className="text-sm font-medium text-slate-700">
                     Category
                   </Label>
-                  <Select name="category" defaultValue={editingProcess?.category || categories[0]}>
+                  <Select name="category_id" defaultValue={editingProcess?.category_id || (categories.length > 0 ? categories[0].id : '')}>
                     <SelectTrigger className="border-slate-300 focus:border-blue-500 focus:ring-blue-500">
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
                       {categories.map((category) => (
-                        <SelectItem key={category} value={category}>
-                          {category}
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -516,27 +751,27 @@ export default function ProcessesPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="setupTime" className="text-sm font-medium text-slate-700">
+                    <Label htmlFor="setup_time" className="text-sm font-medium text-slate-700">
                       Setup Time (min)
                     </Label>
                     <Input
-                      id="setupTime"
-                      name="setupTime"
+                      id="setup_time"
+                      name="setup_time"
                       type="number"
-                      defaultValue={editingProcess?.setupTime}
+                      defaultValue={editingProcess?.setup_time}
                       required
                       className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="hourlyRate" className="text-sm font-medium text-slate-700">
+                    <Label htmlFor="hourly_rate" className="text-sm font-medium text-slate-700">
                       Hourly Rate ($)
                     </Label>
                     <Input
-                      id="hourlyRate"
-                      name="hourlyRate"
+                      id="hourly_rate"
+                      name="hourly_rate"
                       type="number"
-                      defaultValue={editingProcess?.hourlyRate}
+                      defaultValue={editingProcess?.hourly_rate}
                       required
                       className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
                     />
@@ -544,28 +779,28 @@ export default function ProcessesPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="minimumCost" className="text-sm font-medium text-slate-700">
+                    <Label htmlFor="minimum_cost" className="text-sm font-medium text-slate-700">
                       Minimum Cost ($)
                     </Label>
                     <Input
-                      id="minimumCost"
-                      name="minimumCost"
+                      id="minimum_cost"
+                      name="minimum_cost"
                       type="number"
-                      defaultValue={editingProcess?.minimumCost}
+                      defaultValue={editingProcess?.minimum_cost}
                       required
                       className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="complexityMultiplier" className="text-sm font-medium text-slate-700">
+                    <Label htmlFor="complexity_multiplier" className="text-sm font-medium text-slate-700">
                       Complexity Multiplier
                     </Label>
                     <Input
-                      id="complexityMultiplier"
-                      name="complexityMultiplier"
+                      id="complexity_multiplier"
+                      name="complexity_multiplier"
                       type="number"
                       step="0.1"
-                      defaultValue={editingProcess?.complexityMultiplier}
+                      defaultValue={editingProcess?.complexity_multiplier}
                       required
                       className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
                     />
@@ -582,8 +817,8 @@ export default function ProcessesPage() {
                 <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" className="bg-[#d4c273] hover:bg-[#d4c273]/90 text-[#fefefe]">
-                  {editingProcess ? "Save Changes" : "Add Process"}
+                <Button type="submit" className="bg-[#d4c273] hover:bg-[#d4c273]/90 text-[#fefefe]" disabled={isSaving}>
+                  {isSaving ? "Saving..." : (editingProcess ? "Save Changes" : "Add Process")}
                 </Button>
               </DialogFooter>
             </form>
@@ -609,7 +844,7 @@ export default function ProcessesPage() {
         <CategoryManager
           isOpen={isCategoryManagerOpen}
           onClose={() => setIsCategoryManagerOpen(false)}
-          categories={categories}
+          categories={categories.map(cat => cat.name)}
           onCategoriesUpdate={handleCategoriesUpdate}
           title="Process Categories"
           description="Manage process categories for organizing manufacturing processes"
