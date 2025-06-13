@@ -31,6 +31,8 @@ import {
   DollarSign,
 } from "lucide-react"
 import { SortableTableHeader } from "@/components/sortable-table-header"
+import { getCategories, createCategory, updateCategory, deleteCategory, Category as RoutingCategory } from "@/lib/api-categories"
+import { CategoryManager } from "@/components/category-manager"
 import { TableControls } from "@/components/table-controls"
 import { GroupedTableSection } from "@/components/grouped-table-section"
 import { sortData, groupData, type SortConfig } from "@/lib/table-utils"
@@ -483,6 +485,42 @@ const mockRoutings: Routing[] = [
 ]
 
 export default function RoutingsPage() {
+// --- Routing Category State ---
+  const [routingCategories, setRoutingCategories] = useState<RoutingCategory[]>([])
+  const [loadingCategories, setLoadingCategories] = useState(false)
+  const [categoryError, setCategoryError] = useState<string | null>(null)
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
+
+  const fetchRoutingCategories = async () => {
+    setLoadingCategories(true)
+    setCategoryError(null)
+    try {
+      const cats = await getCategories("routing")
+      setRoutingCategories(cats)
+    } catch (err: any) {
+      setCategoryError(err?.message || "Failed to load routing categories")
+    } finally {
+      setLoadingCategories(false)
+    }
+  }
+
+  React.useEffect(() => {
+    fetchRoutingCategories()
+  }, [])
+
+  // CRUD handlers for CategoryManager (add, edit, delete)
+  const handleAddCategory = async (name: string) => {
+    await createCategory({ name, type: "routing" })
+    await fetchRoutingCategories()
+  }
+  const handleUpdateCategory = async (id: string, name: string) => {
+    await updateCategory(id, { name })
+    await fetchRoutingCategories()
+  }
+  const handleDeleteCategory = async (id: string) => {
+    await deleteCategory(id)
+    await fetchRoutingCategories()
+  }
   const [routings, setRoutings] = useState<Routing[]>(mockRoutings)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingRouting, setEditingRouting] = useState<Routing | null>(null)
@@ -846,34 +884,51 @@ export default function RoutingsPage() {
             )}
           </CardContent>
         </Card>
-
-        <RoutingDialog
-          isOpen={isDialogOpen}
-          onClose={() => setIsDialogOpen(false)}
-          routing={editingRouting}
-          processes={mockProcesses}
-          onSave={(routingData) => {
-            if (editingRouting) {
-              setRoutings(routings.map((r) => (r.id === editingRouting.id ? { ...r, ...routingData } : r)))
-            } else {
-              const newRouting: Routing = {
-                id: Date.now().toString(),
-                ...routingData,
-                createdAt: new Date().toISOString().split("T")[0],
-                updatedAt: new Date().toISOString().split("T")[0],
-                isPrimaryPricingRoute: false,
-              }
-              setRoutings([...routings, newRouting])
-            }
-            setIsDialogOpen(false)
-          }}
-        />
+<CategoryManager
+  isOpen={isCategoryManagerOpen}
+  onClose={() => setIsCategoryManagerOpen(false)}
+  categories={routingCategories.map(cat => cat.name)}
+  onCategoriesUpdate={async (updatedNames) => {
+    // Optionally, add logic to update categories on the backend as well
+    await fetchRoutingCategories();
+  }}
+  title="Manage Routing Categories"
+  description="Add, edit, or remove routing categories used for organizing workflows."
+/>
+<RoutingDialog
+  isOpen={isDialogOpen}
+  onClose={() => setIsDialogOpen(false)}
+  routing={editingRouting}
+  processes={mockProcesses}
+  onSave={(routingData) => {
+    if (editingRouting) {
+      setRoutings(routings.map((r) => (r.id === editingRouting.id ? { ...r, ...routingData } : r)))
+    } else {
+      const newRouting: Routing = {
+        id: Date.now().toString(),
+        ...routingData,
+        createdAt: new Date().toISOString().split("T")[0],
+        updatedAt: new Date().toISOString().split("T")[0],
+        isPrimaryPricingRoute: false,
+      }
+      setRoutings([...routings, newRouting])
+    }
+    setIsDialogOpen(false)
+  }}
+  routingCategories={routingCategories}
+  loadingCategories={loadingCategories}
+  categoryError={categoryError}
+  isCategoryManagerOpen={isCategoryManagerOpen}
+  setIsCategoryManagerOpen={setIsCategoryManagerOpen}
+/>
       </div>
     </div>
   )
 }
 
 interface RoutingDialogProps {
+  isCategoryManagerOpen: boolean;
+  setIsCategoryManagerOpen: React.Dispatch<React.SetStateAction<boolean>>;
   isOpen: boolean
   onClose: () => void
   routing: Routing | null
@@ -887,9 +942,12 @@ interface RoutingDialogProps {
     complexityMultiplier: number
   }>
   onSave: (routing: Partial<Routing>) => void
+  routingCategories: RoutingCategory[]
+  loadingCategories: boolean
+  categoryError: string | null
 }
 
-function RoutingDialog({ isOpen, onClose, routing, processes, onSave }: RoutingDialogProps) {
+function RoutingDialog({ isOpen, onClose, routing, processes, onSave, routingCategories, loadingCategories, categoryError, isCategoryManagerOpen, setIsCategoryManagerOpen }: RoutingDialogProps) {
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -1041,366 +1099,381 @@ function RoutingDialog({ isOpen, onClose, routing, processes, onSave }: RoutingD
   const costBreakdown = calculateEstimatedCost()
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl border-0 shadow-xl">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-semibold text-slate-900">
-            {routing ? "Edit Routing" : "Create Routing"}
-          </DialogTitle>
-          <DialogDescription className="text-slate-600">
-            Build a pricing-driven workflow by adding and sequencing manufacturing processes
-          </DialogDescription>
-        </DialogHeader>
+  <Dialog open={isOpen} onOpenChange={onClose}>
+    <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl border-0 shadow-xl">
+      <DialogHeader>
+        <DialogTitle className="text-xl font-semibold text-slate-900">
+          {routing ? "Edit Routing" : "Create Routing"}
+        </DialogTitle>
+        <DialogDescription className="text-slate-600">
+          Build a pricing-driven workflow by adding and sequencing manufacturing processes
+        </DialogDescription>
+      </DialogHeader>
 
-        <div className="grid grid-cols-3 gap-6 py-4">
-          {/* Left Column - Configuration */}
-          <div className="col-span-2 space-y-6">
-            {/* Basic Info */}
-            <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-3 gap-6 py-4">
+        {/* Left Column - Configuration */}
+        <div className="col-span-2 space-y-6">
+          {/* Basic Info */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="name" className="text-sm font-medium text-slate-700">
+                Routing Name
+              </Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
+                placeholder="Auto-generated from process flow"
+              />
+              <p className="text-xs text-slate-500">
+                Name is auto-generated from process sequence. You can override it manually.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="category" className="text-sm font-medium text-slate-700">
+                Category
+              </Label>
+              <Select
+                value={formData.category}
+                onValueChange={(value) => {
+                  if (value === "__manage__") {
+                    setIsCategoryManagerOpen(true);
+                  } else {
+                    setFormData({ ...formData, category: value });
+                  }
+                }}
+              >
+                <SelectTrigger className="border-slate-300 focus:border-blue-500 focus:ring-blue-500">
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {loadingCategories ? (
+                    <div className="px-4 py-2 text-xs text-slate-400">Loading...</div>
+                  ) : categoryError ? (
+                    <div className="px-4 py-2 text-xs text-red-500">{categoryError}</div>
+                  ) : routingCategories.length === 0 ? (
+                    <div className="px-4 py-2 text-xs text-slate-400">No categories found</div>
+                  ) : (
+                    routingCategories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.name}>
+                        {cat.name}
+                      </SelectItem>
+                    ))
+                  )}
+                  <SelectItem value="__manage__">
+                    <span className="text-blue-600">+ Manage Categories</span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="description" className="text-sm font-medium text-slate-700">
+                Description
+              </Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
+                rows={3}
+              />
+            </div>
+            <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name" className="text-sm font-medium text-slate-700">
-                  Routing Name
+                <Label htmlFor="leadTime" className="text-sm font-medium text-slate-700">
+                  Estimated Lead Time (days)
                 </Label>
                 <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  id="leadTime"
+                  type="number"
+                  value={formData.estimatedLeadTime}
+                  onChange={(e) => setFormData({ ...formData, estimatedLeadTime: Number(e.target.value) })}
                   className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
-                  placeholder="Auto-generated from process flow"
                 />
-                <p className="text-xs text-slate-500">
-                  Name is auto-generated from process sequence. You can override it manually.
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="category" className="text-sm font-medium text-slate-700">
-                  Category
-                </Label>
-                <Select
-                  value={formData.category}
-                  onValueChange={(value) => setFormData({ ...formData, category: value })}
-                >
-                  <SelectTrigger className="border-slate-300 focus:border-blue-500 focus:ring-blue-500">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Sheet Metal">Sheet Metal</SelectItem>
-                    <SelectItem value="Machining">Machining</SelectItem>
-                    <SelectItem value="Weldments">Weldments</SelectItem>
-                    <SelectItem value="Assembly">Assembly</SelectItem>
-                    <SelectItem value="Fabrication">Fabrication</SelectItem>
-                    <SelectItem value="Cutting">Cutting</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
             </div>
+          </div>
 
+          {/* Pricing Configuration */}
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 space-y-4 border border-blue-200">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                <DollarSign className="w-4 h-4 text-blue-600" />
+              </div>
+              <h4 className="font-semibold text-blue-900">Routing Pricing Control</h4>
+            </div>
+            <p className="text-sm text-blue-700">
+              These values become the defaults for this routing across all pricing tiers. Tiers can override these for
+              specific cases.
+            </p>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="description" className="text-sm font-medium text-slate-700">
-                  Description
+                <Label htmlFor="materialMarkup" className="text-sm font-medium text-slate-700">
+                  Material Markup (%)
                 </Label>
-                <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                <Input
+                  id="materialMarkup"
+                  type="number"
+                  value={formData.materialMarkup}
+                  onChange={(e) => setFormData({ ...formData, materialMarkup: Number(e.target.value) })}
                   className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
-                  rows={3}
                 />
+                <p className="text-xs text-slate-500">Applied to raw material costs</p>
               </div>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="leadTime" className="text-sm font-medium text-slate-700">
-                    Estimated Lead Time (days)
-                  </Label>
-                  <Input
-                    id="leadTime"
-                    type="number"
-                    value={formData.estimatedLeadTime}
-                    onChange={(e) => setFormData({ ...formData, estimatedLeadTime: Number(e.target.value) })}
-                    className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Pricing Configuration */}
-            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 space-y-4 border border-blue-200">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <DollarSign className="w-4 h-4 text-blue-600" />
-                </div>
-                <h4 className="font-semibold text-blue-900">Routing Pricing Control</h4>
-              </div>
-              <p className="text-sm text-blue-700">
-                These values become the defaults for this routing across all pricing tiers. Tiers can override these for
-                specific cases.
-              </p>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="materialMarkup" className="text-sm font-medium text-slate-700">
-                    Material Markup (%)
-                  </Label>
-                  <Input
-                    id="materialMarkup"
-                    type="number"
-                    value={formData.materialMarkup}
-                    onChange={(e) => setFormData({ ...formData, materialMarkup: Number(e.target.value) })}
-                    className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
-                  />
-                  <p className="text-xs text-slate-500">Applied to raw material costs</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="finishingCost" className="text-sm font-medium text-slate-700">
-                    Finishing Cost ($/sq in)
-                  </Label>
-                  <Input
-                    id="finishingCost"
-                    type="number"
-                    step="0.01"
-                    value={formData.finishingCost}
-                    onChange={(e) => setFormData({ ...formData, finishingCost: Number(e.target.value) })}
-                    className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
-                  />
-                  <p className="text-xs text-slate-500">Cost per square inch of surface area</p>
-                </div>
-              </div>
-
-              {/* Pricing Impact Preview */}
-              <div className="bg-white rounded-lg p-4 border border-blue-200">
-                <h5 className="text-sm font-medium text-slate-700 mb-2">Pricing Impact Preview</h5>
-                <div className="grid grid-cols-3 gap-3 text-sm">
-                  <div className="text-center">
-                    <p className="text-slate-600">Economy Tier</p>
-                    <p className="font-bold text-green-600">${(costBreakdown.totalCost * 0.9).toFixed(0)}</p>
-                    <p className="text-xs text-slate-500">0.9x multiplier</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-slate-600">Standard Tier</p>
-                    <p className="font-bold text-blue-600">${costBreakdown.totalCost.toFixed(0)}</p>
-                    <p className="text-xs text-slate-500">1.0x multiplier</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-slate-600">Rush Tier</p>
-                    <p className="font-bold text-red-600">${(costBreakdown.totalCost * 1.5).toFixed(0)}</p>
-                    <p className="text-xs text-slate-500">1.5x multiplier</p>
-                  </div>
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="finishingCost" className="text-sm font-medium text-slate-700">
+                  Finishing Cost ($/sq in)
+                </Label>
+                <Input
+                  id="finishingCost"
+                  type="number"
+                  step="0.01"
+                  value={formData.finishingCost}
+                  onChange={(e) => setFormData({ ...formData, finishingCost: Number(e.target.value) })}
+                  className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
+                />
+                <p className="text-xs text-slate-500">Cost per square inch of surface area</p>
               </div>
             </div>
 
-            {/* Add Process Step */}
-            <div className="border-t border-slate-200 pt-6">
-              <Label className="text-sm font-medium text-slate-700 mb-3 block">Add Process Step</Label>
-              <div className="flex gap-3">
-                <Select value={selectedProcessId} onValueChange={setSelectedProcessId}>
-                  <SelectTrigger className="flex-1 border-slate-300 focus:border-blue-500 focus:ring-blue-500">
-                    <SelectValue placeholder="Select a process to add" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {/* Primary Operations */}
-                    <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50">
-                      Primary Operations
-                    </div>
-                    {processes
-                      .filter((process) => process.category === "Primary")
-                      .map((process) => (
-                        <SelectItem key={process.id} value={process.id} className="pl-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                            {process.name}
-                          </div>
-                        </SelectItem>
-                      ))}
-
-                    {/* Secondary Operations */}
-                    <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50 mt-2">
-                      Secondary Operations
-                    </div>
-                    {processes
-                      .filter((process) => process.category === "Secondary")
-                      .map((process) => (
-                        <SelectItem key={process.id} value={process.id} className="pl-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                            {process.name}
-                          </div>
-                        </SelectItem>
-                      ))}
-
-                    {/* Finishing Operations */}
-                    <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50 mt-2">
-                      Finishing Operations
-                    </div>
-                    {processes
-                      .filter((process) => process.category === "Finishing")
-                      .map((process) => (
-                        <SelectItem key={process.id} value={process.id} className="pl-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                            {process.name}
-                          </div>
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-                <Button onClick={addStep} disabled={!selectedProcessId} className="bg-blue-600 hover:bg-blue-700">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Step
-                </Button>
+            {/* Pricing Impact Preview */}
+            <div className="bg-white rounded-lg p-4 border border-blue-200">
+              <h5 className="text-sm font-medium text-slate-700 mb-2">Pricing Impact Preview</h5>
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                <div className="text-center">
+                  <p className="text-slate-600">Economy Tier</p>
+                  <p className="font-bold text-green-600">${(costBreakdown.totalCost * 0.9).toFixed(0)}</p>
+                  <p className="text-xs text-slate-500">0.9x multiplier</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-slate-600">Standard Tier</p>
+                  <p className="font-bold text-blue-600">${costBreakdown.totalCost.toFixed(0)}</p>
+                  <p className="text-xs text-slate-500">1.0x multiplier</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-slate-600">Rush Tier</p>
+                  <p className="font-bold text-red-600">${(costBreakdown.totalCost * 1.5).toFixed(0)}</p>
+                  <p className="text-xs text-slate-500">1.5x multiplier</p>
+                </div>
               </div>
             </div>
+          </div>
 
-            {/* Process Steps */}
-            {formData.steps.length > 0 && (
-              <div className="space-y-4">
-                <Label className="text-sm font-medium text-slate-700">Process Sequence</Label>
-                <DragDropContext onDragEnd={handleDragEnd}>
-                  <Droppable droppableId="steps">
-                    {(provided) => (
-                      <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-3">
-                        {formData.steps.map((step, index) => (
-                          <Draggable key={step.id} draggableId={step.id} index={index}>
-                            {(provided) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                className="bg-slate-50 border border-slate-200 rounded-xl p-4"
-                              >
-                                <div className="flex items-center gap-4">
-                                  <div {...provided.dragHandleProps} className="cursor-grab">
-                                    <GripVertical className="h-5 w-5 text-slate-400" />
-                                  </div>
-                                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                                    <span className="text-sm font-bold text-blue-600">{step.sequence}</span>
-                                  </div>
-                                  <div className="flex-1 grid grid-cols-4 gap-3">
-                                    <div>
-                                      <Label className="text-xs text-slate-600">Process</Label>
-                                      <p className="font-medium text-slate-900">{step.processName}</p>
-                                      <p className="text-xs text-slate-500">${step.hourlyRate}/hr</p>
-                                    </div>
-                                    <div>
-                                      <Label className="text-xs text-slate-600">Setup Multiplier</Label>
-                                      <Input
-                                        type="number"
-                                        step="0.1"
-                                        value={step.setupTimeMultiplier}
-                                        onChange={(e) =>
-                                          updateStep(step.id, "setupTimeMultiplier", Number(e.target.value))
-                                        }
-                                        className="h-8 text-sm"
-                                      />
-                                    </div>
-                                    <div>
-                                      <Label className="text-xs text-slate-600">Runtime Multiplier</Label>
-                                      <Input
-                                        type="number"
-                                        step="0.1"
-                                        value={step.runtimeMultiplier}
-                                        onChange={(e) =>
-                                          updateStep(step.id, "runtimeMultiplier", Number(e.target.value))
-                                        }
-                                        className="h-8 text-sm"
-                                      />
-                                    </div>
-                                    <div className="flex items-end">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => removeStep(step.id)}
-                                        className="hover:bg-red-50 hover:text-red-600"
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  </div>
+          {/* Add Process Step */}
+          <div className="border-t border-slate-200 pt-6">
+            <Label className="text-sm font-medium text-slate-700 mb-3 block">Add Process Step</Label>
+            <div className="flex gap-3">
+              <Select value={selectedProcessId} onValueChange={setSelectedProcessId}>
+                <SelectTrigger className="flex-1 border-slate-300 focus:border-blue-500 focus:ring-blue-500">
+                  <SelectValue placeholder="Select a process to add" />
+                </SelectTrigger>
+                <SelectContent>
+                  {/* Primary Operations */}
+                  <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50">
+                    Primary Operations
+                  </div>
+                  {processes
+                    .filter((process) => process.category === "Primary")
+                    .map((process) => (
+                      <SelectItem key={process.id} value={process.id} className="pl-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                          {process.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+
+                  {/* Secondary Operations */}
+                  <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50 mt-2">
+                    Secondary Operations
+                  </div>
+                  {processes
+                    .filter((process) => process.category === "Secondary")
+                    .map((process) => (
+                      <SelectItem key={process.id} value={process.id} className="pl-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                          {process.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+
+                  {/* Finishing Operations */}
+                  <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50 mt-2">
+                    Finishing Operations
+                  </div>
+                  {processes
+                    .filter((process) => process.category === "Finishing")
+                    .map((process) => (
+                      <SelectItem key={process.id} value={process.id} className="pl-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                          {process.name}
+                        </div>
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+              <Button onClick={addStep} disabled={!selectedProcessId} className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Step
+              </Button>
+            </div>
+          </div>
+
+          {/* Process Steps */}
+          {formData.steps.length > 0 && (
+            <div className="space-y-4">
+              <Label className="text-sm font-medium text-slate-700">Process Sequence</Label>
+              <DragDropContext onDragEnd={handleDragEnd}>
+                <Droppable droppableId="steps">
+                  {(provided) => (
+                    <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-3">
+                      {formData.steps.map((step, index) => (
+                        <Draggable key={step.id} draggableId={step.id} index={index}>
+                          {(provided) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              className="bg-slate-50 border border-slate-200 rounded-xl p-4"
+                            >
+                              <div className="flex items-center gap-4">
+                                <div {...provided.dragHandleProps} className="cursor-grab">
+                                  <GripVertical className="h-5 w-5 text-slate-400" />
                                 </div>
-                                <div className="mt-3 ml-12">
-                                  <Label className="text-xs text-slate-600">Notes</Label>
-                                  <Input
-                                    value={step.notes || ""}
-                                    onChange={(e) => updateStep(step.id, "notes", e.target.value)}
-                                    placeholder="Optional notes for this step..."
-                                    className="h-8 text-sm mt-1"
-                                  />
+                                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                                  <span className="text-sm font-bold text-blue-600">{step.sequence}</span>
+                                </div>
+                                <div className="flex-1 grid grid-cols-4 gap-3">
+                                  <div>
+                                    <Label className="text-xs text-slate-600">Process</Label>
+                                    <p className="font-medium text-slate-900">{step.processName}</p>
+                                    <p className="text-xs text-slate-500">${step.hourlyRate}/hr</p>
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-slate-600">Setup Multiplier</Label>
+                                    <Input
+                                      type="number"
+                                      step="0.1"
+                                      value={step.setupTimeMultiplier}
+                                      onChange={(e) =>
+                                        updateStep(step.id, "setupTimeMultiplier", Number(e.target.value))
+                                      }
+                                      className="h-8 text-sm"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs text-slate-600">Runtime Multiplier</Label>
+                                    <Input
+                                      type="number"
+                                      step="0.1"
+                                      value={step.runtimeMultiplier}
+                                      onChange={(e) =>
+                                        updateStep(step.id, "runtimeMultiplier", Number(e.target.value))
+                                      }
+                                      className="h-8 text-sm"
+                                    />
+                                  </div>
+                                  <div className="flex items-end">
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => removeStep(step.id)}
+                                      className="hover:bg-red-50 hover:text-red-600"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
                                 </div>
                               </div>
-                            )}
-                          </Draggable>
-                        ))}
-                        {provided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
-                </DragDropContext>
-              </div>
-            )}
-          </div>
-
-          {/* Right Column - Cost Preview */}
-          <div className="space-y-4">
-            <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg font-semibold text-blue-900 flex items-center gap-2">
-                  <Calculator className="w-5 h-5" />
-                  Cost Preview
-                </CardTitle>
-                <CardDescription className="text-blue-700">
-                  Estimated cost for 1 unit with $100 material
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">Processing:</span>
-                  <span className="font-medium">${costBreakdown.processingCost.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">Material:</span>
-                  <span className="font-medium">${costBreakdown.materialCost.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-600">Finishing:</span>
-                  <span className="font-medium">${costBreakdown.finishingCost.toFixed(2)}</span>
-                </div>
-                <Separator />
-                <div className="flex justify-between text-lg font-bold">
-                  <span className="text-slate-900">Total:</span>
-                  <span className="text-blue-600">${costBreakdown.totalCost.toFixed(2)}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {formData.steps.length > 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium text-slate-700">Process Breakdown</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {formData.steps.map((step, index) => (
-                    <div key={step.id} className="flex items-center gap-2 text-sm">
-                      <div className="w-6 h-6 bg-slate-100 rounded flex items-center justify-center text-xs font-medium">
-                        {index + 1}
-                      </div>
-                      <span className="flex-1 text-slate-700">{step.processName}</span>
-                      <span className="text-slate-500">${step.hourlyRate}/hr</span>
+                              <div className="mt-3 ml-12">
+                                <Label className="text-xs text-slate-600">Notes</Label>
+                                <Input
+                                  value={step.notes || ""}
+                                  onChange={(e) => updateStep(step.id, "notes", e.target.value)}
+                                  placeholder="Optional notes for this step..."
+                                  className="h-8 text-sm mt-1"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
                     </div>
-                  ))}
-                </CardContent>
-              </Card>
-            )}
-          </div>
+                  )}
+                </Droppable>
+              </DragDropContext>
+            </div>
+          )}
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
-            {routing ? "Save Changes" : "Create Routing"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
+        {/* Right Column - Cost Preview */}
+        <div className="space-y-4">
+          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg font-semibold text-blue-900 flex items-center gap-2">
+                <Calculator className="w-5 h-5" />
+                Cost Preview
+              </CardTitle>
+              <CardDescription className="text-blue-700">
+                Estimated cost for 1 unit with $100 material
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">Processing:</span>
+                <span className="font-medium">${costBreakdown.processingCost.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">Material:</span>
+                <span className="font-medium">${costBreakdown.materialCost.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-600">Finishing:</span>
+                <span className="font-medium">${costBreakdown.finishingCost.toFixed(2)}</span>
+              </div>
+              <Separator />
+              <div className="flex justify-between text-lg font-bold">
+                <span className="text-slate-900">Total:</span>
+                <span className="text-blue-600">${costBreakdown.totalCost.toFixed(2)}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {formData.steps.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-slate-700">Process Breakdown</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {formData.steps.map((step, index) => (
+                  <div key={step.id} className="flex items-center gap-2 text-sm">
+                    <div className="w-6 h-6 bg-slate-100 rounded flex items-center justify-center text-xs font-medium">
+                      {index + 1}
+                    </div>
+                    <span className="flex-1 text-slate-700">{step.processName}</span>
+                    <span className="text-slate-500">${step.hourlyRate}/hr</span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
+          {routing ? "Save Changes" : "Create Routing"}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+)}

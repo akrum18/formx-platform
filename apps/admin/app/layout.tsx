@@ -6,6 +6,7 @@ import { AdminSidebar } from "@/components/admin-sidebar"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { AuthProvider } from "@/components/auth-provider"
 import { ProtectedRoute } from "@/components/protected-route"
+import QueryProvider from "@/providers/query-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -23,18 +24,20 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <AuthProvider>
-          <ProtectedRoute>
-            <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
-              <SidebarProvider defaultOpen={true}>
-                <AdminSidebar />
-                <SidebarInset>
-                  <main className="flex-1 overflow-auto">{children}</main>
-                </SidebarInset>
-              </SidebarProvider>
-            </div>
-          </ProtectedRoute>
-        </AuthProvider>
+        <QueryProvider>
+          <AuthProvider>
+            <ProtectedRoute>
+              <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
+                <SidebarProvider defaultOpen={true}>
+                  <AdminSidebar />
+                  <SidebarInset>
+                    <main className="flex-1 overflow-auto">{children}</main>
+                  </SidebarInset>
+                </SidebarProvider>
+              </div>
+            </ProtectedRoute>
+          </AuthProvider>
+        </QueryProvider>
       </body>
     </html>
   )

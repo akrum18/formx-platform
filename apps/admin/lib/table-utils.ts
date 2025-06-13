@@ -1,4 +1,4 @@
-export type SortDirection = "asc" | "desc" | null
+export type SortDirection = "asc" | "desc" | undefined
 
 export interface SortConfig {
   key: string
