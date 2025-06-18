@@ -1,7 +1,9 @@
 "use client"
 
 import React from "react"
-
+  import { getProcesses } from "@/lib/api-routings";
+import { createRouting, getRoutings as fetchRoutingsFromApi } from "@/lib/api-routings";
+// TODO: Replace with real API call
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -74,415 +76,8 @@ interface Routing {
   isPrimaryPricingRoute: boolean
 }
 
-const mockProcesses = [
-  // Primary Operations
-  {
-    id: "1",
-    name: "Laser Cutting",
-    category: "Primary",
-    setupTime: 15,
-    hourlyRate: 95,
-    minimumCost: 25,
-    complexityMultiplier: 1.0,
-  },
-  {
-    id: "2",
-    name: "CNC Milling",
-    category: "Primary",
-    setupTime: 30,
-    hourlyRate: 85,
-    minimumCost: 50,
-    complexityMultiplier: 1.2,
-  },
-  {
-    id: "3",
-    name: "CNC Turning",
-    category: "Primary",
-    setupTime: 20,
-    hourlyRate: 75,
-    minimumCost: 40,
-    complexityMultiplier: 1.0,
-  },
-  {
-    id: "4",
-    name: "Press Brake Bending",
-    category: "Primary",
-    setupTime: 10,
-    hourlyRate: 65,
-    minimumCost: 30,
-    complexityMultiplier: 0.8,
-  },
-  {
-    id: "5",
-    name: "Waterjet Cutting",
-    category: "Primary",
-    setupTime: 20,
-    hourlyRate: 110,
-    minimumCost: 35,
-    complexityMultiplier: 1.1,
-  },
-  {
-    id: "6",
-    name: "Plasma Cutting",
-    category: "Primary",
-    setupTime: 12,
-    hourlyRate: 70,
-    minimumCost: 25,
-    complexityMultiplier: 0.9,
-  },
 
-  // Secondary Operations
-  {
-    id: "7",
-    name: "TIG Welding",
-    category: "Secondary",
-    setupTime: 25,
-    hourlyRate: 90,
-    minimumCost: 45,
-    complexityMultiplier: 1.5,
-  },
-  {
-    id: "8",
-    name: "MIG Welding",
-    category: "Secondary",
-    setupTime: 20,
-    hourlyRate: 80,
-    minimumCost: 40,
-    complexityMultiplier: 1.3,
-  },
-  {
-    id: "9",
-    name: "Deburring",
-    category: "Secondary",
-    setupTime: 5,
-    hourlyRate: 45,
-    minimumCost: 15,
-    complexityMultiplier: 0.5,
-  },
-  {
-    id: "10",
-    name: "Tapping",
-    category: "Secondary",
-    setupTime: 8,
-    hourlyRate: 55,
-    minimumCost: 20,
-    complexityMultiplier: 0.7,
-  },
-  {
-    id: "11",
-    name: "Assembly",
-    category: "Secondary",
-    setupTime: 15,
-    hourlyRate: 60,
-    minimumCost: 30,
-    complexityMultiplier: 1.0,
-  },
-  {
-    id: "12",
-    name: "Heat Treatment",
-    category: "Secondary",
-    setupTime: 30,
-    hourlyRate: 75,
-    minimumCost: 50,
-    complexityMultiplier: 1.2,
-  },
 
-  // Finishing Operations
-  {
-    id: "13",
-    name: "Powder Coating",
-    category: "Finishing",
-    setupTime: 20,
-    hourlyRate: 65,
-    minimumCost: 35,
-    complexityMultiplier: 1.0,
-  },
-  {
-    id: "14",
-    name: "Anodizing",
-    category: "Finishing",
-    setupTime: 25,
-    hourlyRate: 70,
-    minimumCost: 40,
-    complexityMultiplier: 1.1,
-  },
-  {
-    id: "15",
-    name: "Plating",
-    category: "Finishing",
-    setupTime: 30,
-    hourlyRate: 80,
-    minimumCost: 45,
-    complexityMultiplier: 1.2,
-  },
-  {
-    id: "16",
-    name: "Painting",
-    category: "Finishing",
-    setupTime: 15,
-    hourlyRate: 55,
-    minimumCost: 30,
-    complexityMultiplier: 0.9,
-  },
-  {
-    id: "17",
-    name: "Passivation",
-    category: "Finishing",
-    setupTime: 10,
-    hourlyRate: 60,
-    minimumCost: 25,
-    complexityMultiplier: 0.8,
-  },
-  {
-    id: "18",
-    name: "Polishing",
-    category: "Finishing",
-    setupTime: 20,
-    hourlyRate: 65,
-    minimumCost: 35,
-    complexityMultiplier: 1.0,
-  },
-]
-
-const mockRoutings: Routing[] = [
-  {
-    id: "1",
-    name: "Laser Cutting - Deburring - Press Brake Bending - TIG Welding",
-    description: "Standard sheet metal fabrication for brackets and enclosures",
-    category: "Sheet Metal",
-    steps: [
-      {
-        id: "s1",
-        processId: "1",
-        processName: "Laser Cutting",
-        sequence: 1,
-        setupTimeMultiplier: 1.0,
-        runtimeMultiplier: 1.0,
-        notes: "Cut to size with standard tolerances",
-        setupTime: 15,
-        hourlyRate: 95,
-        minimumCost: 25,
-        complexityMultiplier: 1.0,
-      },
-      {
-        id: "s2",
-        processId: "9",
-        processName: "Deburring",
-        sequence: 2,
-        setupTimeMultiplier: 0.5,
-        runtimeMultiplier: 0.8,
-        notes: "Remove sharp edges",
-        setupTime: 5,
-        hourlyRate: 45,
-        minimumCost: 15,
-        complexityMultiplier: 0.5,
-      },
-      {
-        id: "s3",
-        processId: "4",
-        processName: "Press Brake Bending",
-        sequence: 3,
-        setupTimeMultiplier: 1.2,
-        runtimeMultiplier: 1.0,
-        notes: "Form bends per drawing",
-        setupTime: 10,
-        hourlyRate: 65,
-        minimumCost: 30,
-        complexityMultiplier: 0.8,
-      },
-      {
-        id: "s4",
-        processId: "7",
-        processName: "TIG Welding",
-        sequence: 4,
-        setupTimeMultiplier: 1.5,
-        runtimeMultiplier: 1.3,
-        notes: "Weld joints as specified",
-        setupTime: 25,
-        hourlyRate: 90,
-        minimumCost: 45,
-        complexityMultiplier: 1.5,
-      },
-    ],
-    totalSetupTime: 120,
-    estimatedLeadTime: 5,
-    active: true,
-    createdAt: "2024-01-15",
-    updatedAt: "2024-01-20",
-    materialMarkup: 35,
-    finishingCost: 0.15,
-    isPrimaryPricingRoute: true,
-  },
-  {
-    id: "2",
-    name: "CNC Milling - Deburring - Anodizing",
-    description: "CNC machined housing with finishing",
-    category: "Machining",
-    steps: [
-      {
-        id: "s5",
-        processId: "2",
-        processName: "CNC Milling",
-        sequence: 1,
-        setupTimeMultiplier: 1.0,
-        runtimeMultiplier: 1.0,
-        notes: "Rough and finish machining",
-        setupTime: 30,
-        hourlyRate: 85,
-        minimumCost: 50,
-        complexityMultiplier: 1.2,
-      },
-      {
-        id: "s6",
-        processId: "9",
-        processName: "Deburring",
-        sequence: 2,
-        setupTimeMultiplier: 0.3,
-        runtimeMultiplier: 0.5,
-        notes: "Hand deburr all edges",
-        setupTime: 5,
-        hourlyRate: 45,
-        minimumCost: 15,
-        complexityMultiplier: 0.5,
-      },
-      {
-        id: "s7",
-        processId: "14",
-        processName: "Anodizing",
-        sequence: 3,
-        setupTimeMultiplier: 0.8,
-        runtimeMultiplier: 1.0,
-        notes: "Clear anodize finish",
-        setupTime: 25,
-        hourlyRate: 70,
-        minimumCost: 40,
-        complexityMultiplier: 1.1,
-      },
-    ],
-    totalSetupTime: 90,
-    estimatedLeadTime: 7,
-    active: true,
-    createdAt: "2024-01-10",
-    updatedAt: "2024-01-18",
-    materialMarkup: 40,
-    finishingCost: 0.25,
-    isPrimaryPricingRoute: false,
-  },
-  {
-    id: "3",
-    name: "Laser Cutting - MIG Welding - Powder Coating",
-    description: "Multi-component welded assembly",
-    category: "Weldments",
-    steps: [
-      {
-        id: "s8",
-        processId: "1",
-        processName: "Laser Cutting",
-        sequence: 1,
-        setupTimeMultiplier: 1.0,
-        runtimeMultiplier: 1.0,
-        notes: "Cut all components",
-        setupTime: 15,
-        hourlyRate: 95,
-        minimumCost: 25,
-        complexityMultiplier: 1.0,
-      },
-      {
-        id: "s9",
-        processId: "8",
-        processName: "MIG Welding",
-        sequence: 2,
-        setupTimeMultiplier: 2.0,
-        runtimeMultiplier: 1.8,
-        notes: "Tack and final weld",
-        setupTime: 20,
-        hourlyRate: 80,
-        minimumCost: 40,
-        complexityMultiplier: 1.3,
-      },
-      {
-        id: "s10",
-        processId: "13",
-        processName: "Powder Coating",
-        sequence: 3,
-        setupTimeMultiplier: 1.0,
-        runtimeMultiplier: 1.0,
-        notes: "Black powder coat finish",
-        setupTime: 20,
-        hourlyRate: 65,
-        minimumCost: 35,
-        complexityMultiplier: 1.0,
-      },
-    ],
-    totalSetupTime: 180,
-    estimatedLeadTime: 10,
-    active: false,
-    createdAt: "2024-01-05",
-    updatedAt: "2024-01-12",
-    materialMarkup: 30,
-    finishingCost: 0.2,
-    isPrimaryPricingRoute: false,
-  },
-  // Single operation routings
-  {
-    id: "4",
-    name: "CNC Milling",
-    description: "Simple CNC machining operation",
-    category: "Machining",
-    steps: [
-      {
-        id: "s11",
-        processId: "2",
-        processName: "CNC Milling",
-        sequence: 1,
-        setupTimeMultiplier: 1.0,
-        runtimeMultiplier: 1.0,
-        notes: "Standard milling operation",
-        setupTime: 30,
-        hourlyRate: 85,
-        minimumCost: 50,
-        complexityMultiplier: 1.2,
-      },
-    ],
-    totalSetupTime: 30,
-    estimatedLeadTime: 3,
-    active: true,
-    createdAt: "2024-01-22",
-    updatedAt: "2024-01-22",
-    materialMarkup: 35,
-    finishingCost: 0,
-    isPrimaryPricingRoute: false,
-  },
-  {
-    id: "5",
-    name: "Laser Cutting",
-    description: "Simple laser cutting operation",
-    category: "Cutting",
-    steps: [
-      {
-        id: "s12",
-        processId: "1",
-        processName: "Laser Cutting",
-        sequence: 1,
-        setupTimeMultiplier: 1.0,
-        runtimeMultiplier: 1.0,
-        notes: "Standard laser cutting",
-        setupTime: 15,
-        hourlyRate: 95,
-        minimumCost: 25,
-        complexityMultiplier: 1.0,
-      },
-    ],
-    totalSetupTime: 15,
-    estimatedLeadTime: 2,
-    active: true,
-    createdAt: "2024-01-22",
-    updatedAt: "2024-01-22",
-    materialMarkup: 30,
-    finishingCost: 0,
-    isPrimaryPricingRoute: false,
-  },
-]
 
 export default function RoutingsPage() {
 // --- Routing Category State ---
@@ -521,7 +116,48 @@ export default function RoutingsPage() {
     await deleteCategory(id)
     await fetchRoutingCategories()
   }
-  const [routings, setRoutings] = useState<Routing[]>(mockRoutings)
+
+  
+  const [processes, setProcesses] = useState<any[]>([]);
+  const [processesLoading, setProcessesLoading] = useState(false);
+  const [processesError, setProcessesError] = useState<string | null>(null);
+  const [processCategories, setProcessCategories] = useState<RoutingCategory[]>([]);
+  const [loadingProcessCategories, setLoadingProcessCategories] = useState(false);
+  const [processCategoriesError, setProcessCategoriesError] = useState<string | null>(null);
+  
+  React.useEffect(() => {
+    setLoadingProcessCategories(true);
+    setProcessCategoriesError(null);
+    getCategories("process")
+      .then(setProcessCategories)
+      .catch(err => setProcessCategoriesError(err.message || "Failed to load process categories"))
+      .finally(() => setLoadingProcessCategories(false));
+  }, []);
+  
+  React.useEffect(() => {
+    setProcessesLoading(true);
+    setProcessesError(null);
+    getProcesses()
+      .then(setProcesses)
+      .catch(err => setProcessesError(err.message || "Failed to load processes"))
+      .finally(() => setProcessesLoading(false));
+  }, []);
+  const [routings, setRoutings] = useState<Routing[]>([])
+
+
+React.useEffect(() => {
+  const fetchRoutings = async () => {
+    // Fetch routings from API and update state
+    try {
+      const { routings } = await fetchRoutingsFromApi();
+      setRoutings(Array.isArray(routings) ? routings : []);
+    } catch (err) {
+      // Optionally set error state/toast
+      console.error("Failed to fetch routings", err);
+    }
+  };
+  fetchRoutings();
+}, []);
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingRouting, setEditingRouting] = useState<Routing | null>(null)
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "name", direction: "asc" })
@@ -597,7 +233,7 @@ export default function RoutingsPage() {
     }
   }
 
-  const filteredRoutings = routings.filter(
+  const filteredRoutings = (routings ?? []).filter(
     (routing) =>
       routing.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       routing.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -889,7 +525,16 @@ export default function RoutingsPage() {
   onClose={() => setIsCategoryManagerOpen(false)}
   categories={routingCategories.map(cat => cat.name)}
   onCategoriesUpdate={async (updatedNames) => {
-    // Optionally, add logic to update categories on the backend as well
+    const oldNames = routingCategories.map(cat => cat.name);
+    const toAdd = updatedNames.filter(n => !oldNames.includes(n));
+    const toDelete = oldNames.filter(n => !updatedNames.includes(n));
+    for (const name of toAdd) {
+      await createCategory({ name, type: "routing" });
+    }
+    for (const name of toDelete) {
+      const cat = routingCategories.find(c => c.name === name);
+      if (cat) await deleteCategory(cat.id);
+    }
     await fetchRoutingCategories();
   }}
   title="Manage Routing Categories"
@@ -899,21 +544,22 @@ export default function RoutingsPage() {
   isOpen={isDialogOpen}
   onClose={() => setIsDialogOpen(false)}
   routing={editingRouting}
-  processes={mockProcesses}
-  onSave={(routingData) => {
+  processes={processes}
+  processesLoading={processesLoading}
+  processesError={processesError}
+  processCategories={processCategories}
+  loadingProcessCategories={loadingProcessCategories}
+  processCategoriesError={processCategoriesError}
+  onSave={async (routingData) => {
     if (editingRouting) {
       setRoutings(routings.map((r) => (r.id === editingRouting.id ? { ...r, ...routingData } : r)))
     } else {
-      const newRouting: Routing = {
-        id: Date.now().toString(),
-        ...routingData,
-        createdAt: new Date().toISOString().split("T")[0],
-        updatedAt: new Date().toISOString().split("T")[0],
-        isPrimaryPricingRoute: false,
-      }
-      setRoutings([...routings, newRouting])
+      // Pass the extended routing data with categoryId
+      await createRouting(routingData as any);
+      const { routings } = await fetchRoutingsFromApi();
+      setRoutings(Array.isArray(routings) ? routings : []);
     }
-    setIsDialogOpen(false)
+    setIsDialogOpen(false);
   }}
   routingCategories={routingCategories}
   loadingCategories={loadingCategories}
@@ -932,19 +578,16 @@ interface RoutingDialogProps {
   isOpen: boolean
   onClose: () => void
   routing: Routing | null
-  processes: Array<{
-    id: string
-    name: string
-    category: string
-    setupTime: number
-    hourlyRate: number
-    minimumCost: number
-    complexityMultiplier: number
-  }>
+  processes: Array<any>;
+  processesLoading: boolean;
+  processesError: string | null;
+  processCategories: RoutingCategory[];
+  loadingProcessCategories: boolean;
+  processCategoriesError: string | null;
   onSave: (routing: Partial<Routing>) => void
   routingCategories: RoutingCategory[]
   loadingCategories: boolean
-  categoryError: string | null
+  categoryError: string | null;
 }
 
 function RoutingDialog({ isOpen, onClose, routing, processes, onSave, routingCategories, loadingCategories, categoryError, isCategoryManagerOpen, setIsCategoryManagerOpen }: RoutingDialogProps) {
@@ -952,6 +595,7 @@ function RoutingDialog({ isOpen, onClose, routing, processes, onSave, routingCat
     name: "",
     description: "",
     category: "",
+    categoryId: "", // Add categoryId field
     estimatedLeadTime: 5,
     active: true,
     steps: [] as RoutingStep[],
@@ -976,6 +620,7 @@ function RoutingDialog({ isOpen, onClose, routing, processes, onSave, routingCat
         name: routing.name,
         description: routing.description,
         category: routing.category,
+        categoryId: "", // TODO: Need to get categoryId from routing
         estimatedLeadTime: routing.estimatedLeadTime,
         active: routing.active,
         steps: [...routing.steps],
@@ -987,6 +632,7 @@ function RoutingDialog({ isOpen, onClose, routing, processes, onSave, routingCat
         name: "",
         description: "",
         category: "",
+        categoryId: "",
         estimatedLeadTime: 5,
         active: true,
         steps: [],
@@ -1010,18 +656,18 @@ function RoutingDialog({ isOpen, onClose, routing, processes, onSave, routingCat
     const process = processes.find((p) => p.id === selectedProcessId)
     if (!process) return
 
-    const newStep: RoutingStep = {
-      id: Date.now().toString(),
-      processId: process.id,
-      processName: process.name,
-      sequence: formData.steps.length + 1,
-      setupTimeMultiplier: 1.0,
-      runtimeMultiplier: 1.0,
-      notes: "",
-      setupTime: process.setupTime,
-      hourlyRate: process.hourlyRate,
-      minimumCost: process.minimumCost,
-      complexityMultiplier: process.complexityMultiplier,
+const newStep: RoutingStep = {
+  id: Date.now().toString(),
+  processId: process.id,
+  processName: process.name,
+  sequence: formData.steps.length + 1,
+  setupTimeMultiplier: 1.0,
+  runtimeMultiplier: 1.0,
+  notes: "",
+  setupTime: process.setup_time ?? process.setupTime,
+  hourlyRate: process.hourly_rate ?? process.hourlyRate,
+  minimumCost: process.minimum_cost ?? process.minimumCost,
+  complexityMultiplier: process.complexity_multiplier ?? process.complexityMultiplier,
     }
 
     const updatedSteps = [...formData.steps, newStep]
@@ -1093,7 +739,15 @@ function RoutingDialog({ isOpen, onClose, routing, processes, onSave, routingCat
   }
 
   const handleSave = () => {
-    onSave(formData)
+    // Calculate total setup time from steps
+    const totalSetupTime = formData.steps.reduce((total, step) => {
+      return total + (step.setupTime * step.setupTimeMultiplier);
+    }, 0);
+    
+    onSave({
+      ...formData,
+      totalSetupTime: Math.round(totalSetupTime)
+    })
   }
 
   const costBreakdown = calculateEstimatedCost()
@@ -1135,12 +789,17 @@ function RoutingDialog({ isOpen, onClose, routing, processes, onSave, routingCat
                 Category
               </Label>
               <Select
-                value={formData.category}
+                value={formData.categoryId}
                 onValueChange={(value) => {
                   if (value === "__manage__") {
                     setIsCategoryManagerOpen(true);
                   } else {
-                    setFormData({ ...formData, category: value });
+                    const selectedCategory = routingCategories.find(cat => cat.id === value);
+                    setFormData({ 
+                      ...formData, 
+                      categoryId: value,
+                      category: selectedCategory?.name || ""
+                    });
                   }
                 }}
               >
@@ -1156,7 +815,7 @@ function RoutingDialog({ isOpen, onClose, routing, processes, onSave, routingCat
                     <div className="px-4 py-2 text-xs text-slate-400">No categories found</div>
                   ) : (
                     routingCategories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.name}>
+                      <SelectItem key={cat.id} value={cat.id}>
                         {cat.name}
                       </SelectItem>
                     ))
@@ -1271,52 +930,26 @@ function RoutingDialog({ isOpen, onClose, routing, processes, onSave, routingCat
                 <SelectTrigger className="flex-1 border-slate-300 focus:border-blue-500 focus:ring-blue-500">
                   <SelectValue placeholder="Select a process to add" />
                 </SelectTrigger>
-                <SelectContent>
-                  {/* Primary Operations */}
-                  <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50">
-                    Primary Operations
-                  </div>
-                  {processes
-                    .filter((process) => process.category === "Primary")
-                    .map((process) => (
-                      <SelectItem key={process.id} value={process.id} className="pl-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                          {process.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-
-                  {/* Secondary Operations */}
-                  <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50 mt-2">
-                    Secondary Operations
-                  </div>
-                  {processes
-                    .filter((process) => process.category === "Secondary")
-                    .map((process) => (
-                      <SelectItem key={process.id} value={process.id} className="pl-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                          {process.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-
-                  {/* Finishing Operations */}
-                  <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50 mt-2">
-                    Finishing Operations
-                  </div>
-                  {processes
-                    .filter((process) => process.category === "Finishing")
-                    .map((process) => (
-                      <SelectItem key={process.id} value={process.id} className="pl-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                          {process.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                </SelectContent>
+<SelectContent>
+  {["Primary", "Secondary", "Finishing"].map(catName => (
+    <React.Fragment key={catName}>
+      <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50">
+        {catName} Operations
+      </div>
+      {processes
+        .filter(proc => proc.category_id === {
+          Primary: "ce5e8735-8212-4bde-96b1-792a36f2e67c",
+          Secondary: "6b1400d2-127a-483e-8f21-d87f98dc5514",
+          Finishing: "21ac8f90-1ebe-4dc4-884e-ce395689fe64"
+        }[catName])
+        .map(proc => (
+          <SelectItem key={proc.id} value={proc.id} className="pl-4">
+            {proc.name}
+          </SelectItem>
+        ))}
+    </React.Fragment>
+  ))}
+</SelectContent>
               </Select>
               <Button onClick={addStep} disabled={!selectedProcessId} className="bg-blue-600 hover:bg-blue-700">
                 <Plus className="h-4 w-4 mr-2" />

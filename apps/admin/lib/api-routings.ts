@@ -1,6 +1,21 @@
 import { RoutingStep, Routing, Process, CreateRoutingData } from "../types/routing"
+import { snakeToCamel } from "./utils";
 
 import axios from "axios"
+// Utility: convert camelCase to snake_case recursively
+function toSnakeCase(obj: any): any {
+  if (Array.isArray(obj)) {
+    return obj.map(toSnakeCase);
+  } else if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj).map(([k, v]) => [
+        k.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`),
+        toSnakeCase(v),
+      ])
+    );
+  }
+  return obj;
+}
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
@@ -51,7 +66,17 @@ export async function getRoutings(filters?: RoutingFilters): Promise<RoutingsRes
 
   try {
     const { data } = await api.get<RoutingsResponse>(`/api/admin/routings?${params.toString()}`)
-    return data
+    // Normalize all keys to camelCase recursively
+const normalizedData = snakeToCamel(data); // This will be the camelCase array
+    return {
+      routings: normalizedData,
+      total: normalizedData.length,
+      stats: {
+        totalRoutings: normalizedData.length,
+        activeRoutings: normalizedData.filter((r: any) => r.active).length,
+        averageSteps: normalizedData.length > 0 ? (normalizedData.reduce((sum: number, r: any) => sum + r.steps.length, 0) / normalizedData.length) : 0,
+      },
+    };
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.data?.message) {
       throw new Error(error.response.data.message)
@@ -59,12 +84,13 @@ export async function getRoutings(filters?: RoutingFilters): Promise<RoutingsRes
     throw new Error("Failed to fetch routings")
   }
 }
+  
 
 // Fetch a single routing by ID
 export async function getRouting(id: string): Promise<Routing> {
   try {
     const { data } = await api.get<Routing>(`/api/admin/routings/${id}`)
-    return data
+    return snakeToCamel(data)
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.data?.message) {
       throw new Error(error.response.data.message)
@@ -76,8 +102,34 @@ export async function getRouting(id: string): Promise<Routing> {
 // Create a new routing
 export async function createRouting(routing: CreateRoutingData): Promise<Routing> {
   try {
-    const { data } = await api.post<Routing>("/api/admin/routings", routing)
-    return data
+    // Clean up the routing data to match backend expectations
+    const cleanedRouting = {
+      name: routing.name,
+      description: routing.description || "",
+      category: routing.category || "",
+      category_id: (routing as any).categoryId || null, // Get categoryId from the extended routing data
+      total_setup_time: routing.totalSetupTime || 0,
+      estimated_lead_time: routing.estimatedLeadTime,
+      active: routing.active,
+      material_markup: routing.materialMarkup,
+      finishing_cost: routing.finishingCost,
+      is_primary_pricing_route: routing.isPrimaryPricingRoute || false,
+      complexity_score: 1, // Default complexity score
+      steps: routing.steps.map(step => ({
+        process_id: step.processId,
+        sequence: step.sequence,
+        setup_time_multiplier: step.setupTimeMultiplier,
+        runtime_multiplier: step.runtimeMultiplier,
+        notes: step.notes || "",
+        parallel_step: false,
+        quality_check_required: false
+        // Remove frontend-only fields
+        // id, processName, setupTime, hourlyRate, minimumCost, complexityMultiplier
+      }))
+    };
+    
+    const { data } = await api.post<Routing>("/api/admin/routings", cleanedRouting)
+    return snakeToCamel(data)
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.data?.message) {
       throw new Error(error.response.data.message)
@@ -90,7 +142,7 @@ export async function createRouting(routing: CreateRoutingData): Promise<Routing
 export async function updateRouting(id: string, routing: Partial<Routing>): Promise<Routing> {
   try {
     const { data } = await api.put<Routing>(`/api/admin/routings/${id}`, routing)
-    return data
+    return snakeToCamel(data)
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.data?.message) {
       throw new Error(error.response.data.message)

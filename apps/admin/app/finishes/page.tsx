@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -27,57 +27,11 @@ import { CSVImportDialog } from "@/components/csv-import-dialog"
 import { CSVExportDialog } from "@/components/csv-export-dialog"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 
-interface Finish {
-  id: string
-  name: string
-  type: string
-  costPerSqIn: number
-  leadTimeDays: number
-  description: string
-  active: boolean
-}
-
-const mockFinishes: Finish[] = [
-  {
-    id: "1",
-    name: "Anodized Clear",
-    type: "Anodizing",
-    costPerSqIn: 0.15,
-    leadTimeDays: 3,
-    description: "Clear anodized finish for aluminum parts",
-    active: true,
-  },
-  {
-    id: "2",
-    name: "Black Oxide",
-    type: "Chemical",
-    costPerSqIn: 0.08,
-    leadTimeDays: 2,
-    description: "Black oxide coating for steel parts",
-    active: true,
-  },
-  {
-    id: "3",
-    name: "Powder Coat Black",
-    type: "Powder Coating",
-    costPerSqIn: 0.25,
-    leadTimeDays: 5,
-    description: "Durable powder coat finish",
-    active: true,
-  },
-  {
-    id: "4",
-    name: "Zinc Plating",
-    type: "Plating",
-    costPerSqIn: 0.12,
-    leadTimeDays: 4,
-    description: "Corrosion resistant zinc plating",
-    active: false,
-  },
-]
+import { Finish } from "@/types/finish"
+import { getFinishes, createFinish, updateFinish, deleteFinish } from "@/lib/api-finishes"
 
 export default function FinishesPage() {
-  const [finishes, setFinishes] = useState<Finish[]>(mockFinishes)
+  const [finishes, setFinishes] = useState<Finish[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingFinish, setEditingFinish] = useState<Finish | null>(null)
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "name", direction: "asc" })
@@ -85,7 +39,165 @@ export default function FinishesPage() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [form, setForm] = useState({
+    name: "",
+    type: "Anodizing",
+    costPerSqIn: "",
+    leadTimeDays: "",
+    description: "",
+    active: true,
+  })
+  const [submitLoading, setSubmitLoading] = useState(false)
 
+  // --- Fetch finishes on mount and after changes ---
+  const fetchFinishes = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await getFinishes()
+      setFinishes(data.finishes)
+    } catch (e: any) {
+      setError(e.message || "Failed to load finishes")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchFinishes()
+  }, [])
+
+  // --- Dialog Form Logic ---
+  const handleEdit = (finish: Finish) => {
+    setEditingFinish(finish)
+    setForm({
+      name: finish.name,
+      type: finish.type,
+      costPerSqIn: finish.costPerSqIn.toString(),
+      leadTimeDays: finish.leadTimeDays.toString(),
+      description: finish.description,
+      active: finish.active,
+    })
+    setIsDialogOpen(true)
+  }
+
+  const handleAdd = () => {
+    setEditingFinish(null)
+    setForm({
+      name: "",
+      type: "Anodizing",
+      costPerSqIn: "",
+      leadTimeDays: "",
+      description: "",
+      active: true,
+    })
+    setIsDialogOpen(true)
+  }
+
+  const handleDialogChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { id, value, type, checked } = e.target
+    setForm((prev) => ({
+      ...prev,
+      [id]: type === "checkbox" ? checked : value,
+    }))
+  }
+
+  const handleDialogSelectChange = (value: string) => {
+    setForm((prev) => ({ ...prev, type: value }))
+  }
+
+  const handleDialogSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmitLoading(true)
+    try {
+      if (editingFinish) {
+        await updateFinish(editingFinish.id, {
+          name: form.name,
+          type: form.type,
+          costPerSqIn: parseFloat(form.costPerSqIn),
+          leadTimeDays: parseInt(form.leadTimeDays),
+          description: form.description,
+          active: form.active,
+        })
+      } else {
+        await createFinish({
+          name: form.name,
+          type: form.type,
+          costPerSqIn: parseFloat(form.costPerSqIn),
+          leadTimeDays: parseInt(form.leadTimeDays),
+          description: form.description,
+          active: form.active,
+        })
+      }
+      setIsDialogOpen(false)
+      await fetchFinishes()
+    } catch (e: any) {
+      setError(e.message || "Failed to save finish")
+    } finally {
+      setSubmitLoading(false)
+    }
+  }
+
+  // --- CRUD actions ---
+  const handleDelete = async (id: string) => {
+    setSubmitLoading(true)
+    try {
+      await deleteFinish(id)
+      await fetchFinishes()
+    } catch (e: any) {
+      setError(e.message || "Failed to delete finish")
+    } finally {
+      setSubmitLoading(false)
+    }
+  }
+
+  const handleToggleActive = async (finish: Finish) => {
+    setSubmitLoading(true)
+    try {
+      await updateFinish(finish.id, { ...finish, active: !finish.active })
+      await fetchFinishes()
+    } catch (e: any) {
+      setError(e.message || "Failed to update finish")
+    } finally {
+      setSubmitLoading(false)
+    }
+  }
+
+  // --- CSV Import ---
+  const handleImport = async (importedData: any[]) => {
+    setSubmitLoading(true)
+    try {
+      for (const item of importedData) {
+        await createFinish({
+          name: item.name || "",
+          type: item.type || "Chemical",
+          costPerSqIn: Number(item.costPerSqIn) || 0,
+          leadTimeDays: Number(item.leadTimeDays) || 0,
+          description: item.description || "",
+          active: item.active !== undefined ? item.active : true,
+        })
+      }
+      await fetchFinishes()
+    } catch (e: any) {
+      setError(e.message || "Failed to import finishes")
+    } finally {
+      setSubmitLoading(false)
+    }
+  }
+
+  // --- Filtering, Grouping, Sorting ---
+  const filteredFinishes = finishes.filter(
+    (finish) =>
+      finish.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      finish.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      finish.description.toLowerCase().includes(searchTerm.toLowerCase()),
+  )
+  const sortedFinishes = sortData(filteredFinishes, sortConfig)
+  const groupedFinishes = groupData(sortedFinishes, groupBy)
+
+  // --- Table, Row, UI ---
   const groupOptions = [
     { value: "active", label: "Status" },
     { value: "type", label: "Type" },
@@ -112,30 +224,6 @@ export default function FinishesPage() {
     }))
   }
 
-  const toggleFinish = (id: string) => {
-    setFinishes(finishes.map((f) => (f.id === id ? { ...f, active: !f.active } : f)))
-  }
-
-  const handleEdit = (finish: Finish) => {
-    setEditingFinish(finish)
-    setIsDialogOpen(true)
-  }
-
-  const handleAdd = () => {
-    setEditingFinish(null)
-    setIsDialogOpen(true)
-  }
-
-  const filteredFinishes = finishes.filter(
-    (finish) =>
-      finish.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      finish.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      finish.description.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
-
-  const sortedFinishes = sortData(filteredFinishes, sortConfig)
-  const groupedFinishes = groupData(sortedFinishes, groupBy)
-
   const renderFinishRow = (finish: Finish) => (
     <TableRow key={finish.id} className="hover:bg-slate-50/50 transition-colors">
       <TableCell className="font-medium text-slate-900">{finish.name}</TableCell>
@@ -149,7 +237,7 @@ export default function FinishesPage() {
       <TableCell className="max-w-xs truncate text-slate-600">{finish.description}</TableCell>
       <TableCell>
         <div className="flex items-center space-x-3">
-          <Switch checked={finish.active} onCheckedChange={() => toggleFinish(finish.id)} />
+          <Switch checked={finish.active} onCheckedChange={() => handleToggleActive(finish)} />
           <Badge
             variant={finish.active ? "default" : "secondary"}
             className={finish.active ? "bg-green-100 text-green-700 hover:bg-green-200" : "bg-slate-100 text-slate-600"}
@@ -168,7 +256,13 @@ export default function FinishesPage() {
           >
             <Edit className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm" className="hover:bg-red-50 hover:text-red-600">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="hover:bg-red-50 hover:text-red-600"
+            onClick={() => handleDelete(finish.id)}
+            disabled={submitLoading}
+          >
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
@@ -178,7 +272,6 @@ export default function FinishesPage() {
 
   const renderTable = (finishesToRender: Finish[], showHeader = true, isGrouped = false) => {
     const columnClasses = getTableColumnClasses().finishes
-
     return (
       <Table>
         <TableHeader className={isGrouped ? "border-b-0" : ""}>
@@ -230,21 +323,6 @@ export default function FinishesPage() {
         <TableBody>{finishesToRender.map(renderFinishRow)}</TableBody>
       </Table>
     )
-  }
-
-  const handleImport = (importedData: any[]) => {
-    const newFinishes = importedData.map((item, index) => ({
-      id: (Date.now() + index).toString(),
-      name: item.name || "",
-      type: item.type || "Chemical",
-      costPerSqIn: Number(item.costPerSqIn) || 0,
-      leadTimeDays: Number(item.leadTimeDays) || 0,
-      description: item.description || "",
-      active: item.active !== undefined ? item.active : true,
-    }))
-
-    setFinishes([...finishes, ...newFinishes])
-    console.log(`Imported ${newFinishes.length} finishes`)
   }
 
   return (
@@ -330,7 +408,7 @@ export default function FinishesPage() {
                 <div>
                   <p className="text-sm font-medium text-slate-600">Avg Lead Time</p>
                   <p className="text-xl font-bold text-slate-900">
-                    {Math.round(finishes.reduce((sum, f) => sum + f.leadTimeDays, 0) / finishes.length)} days
+                    {finishes.length > 0 ? Math.round(finishes.reduce((sum, f) => sum + f.leadTimeDays, 0) / finishes.length) : 0} days
                   </p>
                 </div>
               </div>
@@ -391,6 +469,8 @@ export default function FinishesPage() {
             ) : (
               renderTable(sortedFinishes, true, false)
             )}
+            {loading && <div className="text-center text-slate-500 mt-8">Loading finishes...</div>}
+            {error && <div className="text-center text-red-600 mt-4">{error}</div>}
           </CardContent>
         </Card>
 
@@ -418,22 +498,24 @@ export default function FinishesPage() {
               </DialogTitle>
               <DialogDescription className="text-slate-600">Configure finish properties and pricing</DialogDescription>
             </DialogHeader>
-            <div className="grid gap-6 py-4">
+            <form className="grid gap-6 py-4" onSubmit={handleDialogSubmit}>
               <div className="grid gap-2">
                 <Label htmlFor="name" className="text-sm font-medium text-slate-700">
                   Finish Name
                 </Label>
                 <Input
                   id="name"
-                  defaultValue={editingFinish?.name}
+                  value={form.name}
+                  onChange={handleDialogChange}
                   className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
+                  required
                 />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="type" className="text-sm font-medium text-slate-700">
                   Type
                 </Label>
-                <Select defaultValue={editingFinish?.type}>
+                <Select value={form.type} onValueChange={handleDialogSelectChange}>
                   <SelectTrigger className="border-slate-300 focus:border-blue-500 focus:ring-blue-500">
                     <SelectValue placeholder="Select finish type" />
                   </SelectTrigger>
@@ -448,26 +530,30 @@ export default function FinishesPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label htmlFor="cost" className="text-sm font-medium text-slate-700">
+                  <Label htmlFor="costPerSqIn" className="text-sm font-medium text-slate-700">
                     Cost per in²
                   </Label>
                   <Input
-                    id="cost"
+                    id="costPerSqIn"
                     type="number"
                     step="0.001"
-                    defaultValue={editingFinish?.costPerSqIn}
+                    value={form.costPerSqIn}
+                    onChange={handleDialogChange}
                     className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
+                    required
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="leadTime" className="text-sm font-medium text-slate-700">
+                  <Label htmlFor="leadTimeDays" className="text-sm font-medium text-slate-700">
                     Lead Time (days)
                   </Label>
                   <Input
-                    id="leadTime"
+                    id="leadTimeDays"
                     type="number"
-                    defaultValue={editingFinish?.leadTimeDays}
+                    value={form.leadTimeDays}
+                    onChange={handleDialogChange}
                     className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
+                    required
                   />
                 </div>
               </div>
@@ -477,19 +563,30 @@ export default function FinishesPage() {
                 </Label>
                 <Input
                   id="description"
-                  defaultValue={editingFinish?.description}
+                  value={form.description}
+                  onChange={handleDialogChange}
                   className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-                Save Finish
-              </Button>
-            </DialogFooter>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="active" className="text-sm font-medium text-slate-700">
+                  Active
+                </Label>
+                <Switch
+                  id="active"
+                  checked={form.active}
+                  onCheckedChange={(checked) => setForm((prev) => ({ ...prev, active: checked }))}
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsDialogOpen(false)} type="button">
+                  Cancel
+                </Button>
+                <Button type="submit" className="bg-blue-600 hover:bg-blue-700" disabled={submitLoading}>
+                  {submitLoading ? "Saving..." : "Save Finish"}
+                </Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
       </div>
