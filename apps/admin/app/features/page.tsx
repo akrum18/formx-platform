@@ -1,104 +1,63 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { ToggleLeft, Search, Filter } from "lucide-react"
+import { ToggleLeft, Search, Filter, Loader2 } from "lucide-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
-
-interface FeatureFlag {
-  id: string
-  name: string
-  description: string
-  enabled: boolean
-  rolloutPercentage: number
-  category: string
-}
+import { useFeatureFlags } from "@/hooks/useFeatureFlags"
+import { toast } from "@/components/ui/use-toast"
 
 export default function FeaturesPage() {
-  const [features, setFeatures] = useState<FeatureFlag[]>([
-    {
-      id: "5axis-cnc",
-      name: "5-Axis CNC Quoting",
-      description: "Enable 5-axis CNC machining in the quoting system",
-      enabled: true,
-      rolloutPercentage: 100,
-      category: "Processes",
-    },
-    {
-      id: "coating-options",
-      name: "Coating & Finishing Options",
-      description: "Show coating and finishing options in quotes",
-      enabled: true,
-      rolloutPercentage: 100,
-      category: "Finishes",
-    },
-    {
-      id: "rush-orders",
-      name: "Rush Order Pricing",
-      description: "Allow customers to request rush delivery with premium pricing",
-      enabled: true,
-      rolloutPercentage: 100,
-      category: "Pricing",
-    },
-    {
-      id: "volume-discounts",
-      name: "Volume Discount Display",
-      description: "Show volume-based pricing tiers to customers",
-      enabled: false,
-      rolloutPercentage: 25,
-      category: "Pricing",
-    },
-    {
-      id: "material-suggestions",
-      name: "Material Suggestions",
-      description: "AI-powered material recommendations based on part geometry",
-      enabled: false,
-      rolloutPercentage: 10,
-      category: "Experimental",
-    },
-    {
-      id: "instant-quotes",
-      name: "Instant Quote Generation",
-      description: "Generate quotes without manual review for simple parts",
-      enabled: false,
-      rolloutPercentage: 5,
-      category: "Experimental",
-    },
-  ])
+  const {
+    items: features,
+    ui,
+    filters,
+    stats,
+    actions
+  } = useFeatureFlags();
 
-  const [searchTerm, setSearchTerm] = useState("")
+  // Fetch features on mount
+  useEffect(() => {
+    actions.fetchFlags();
+  }, [actions.fetchFlags]);
 
-  const toggleFeature = (id: string) => {
-    setFeatures(features.map((f) => (f.id === id ? { ...f, enabled: !f.enabled } : f)))
-  }
+  const handleToggle = async (id: string, enabled: boolean) => {
+    try {
+      await actions.toggleFlag(id, enabled);
+      toast({
+        title: "Success",
+        description: `Feature ${enabled ? 'enabled' : 'disabled'} successfully`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to toggle feature",
+        variant: "destructive"
+      });
+    }
+  };
 
-  const updateRollout = (id: string, percentage: number) => {
-    setFeatures(features.map((f) => (f.id === id ? { ...f, rolloutPercentage: percentage } : f)))
-  }
-
-  const filteredFeatures = features.filter(
-    (feature) =>
-      feature.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      feature.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      feature.category.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
-
-  const groupedFeatures = filteredFeatures.reduce(
-    (acc, feature) => {
-      if (!acc[feature.category]) {
-        acc[feature.category] = []
-      }
-      acc[feature.category].push(feature)
-      return acc
-    },
-    {} as Record<string, FeatureFlag[]>,
-  )
+  const handleRolloutUpdate = async (id: string, percentage: number) => {
+    try {
+      await actions.updateRollout(id, percentage);
+      toast({
+        title: "Success",
+        description: `Rollout percentage updated successfully`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update rollout percentage",
+        variant: "destructive"
+      });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
@@ -125,7 +84,7 @@ export default function FeaturesPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-slate-600">Total Features</p>
-                  <p className="text-xl font-bold text-slate-900">{features.length}</p>
+                  <p className="text-xl font-bold text-slate-900">{stats.total}</p>
                 </div>
               </div>
             </div>
@@ -136,7 +95,7 @@ export default function FeaturesPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-slate-600">Enabled Features</p>
-                  <p className="text-xl font-bold text-slate-900">{features.filter((f) => f.enabled).length}</p>
+                  <p className="text-xl font-bold text-slate-900">{stats.enabled}</p>
                 </div>
               </div>
             </div>
@@ -147,9 +106,7 @@ export default function FeaturesPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-slate-600">Experimental</p>
-                  <p className="text-xl font-bold text-slate-900">
-                    {features.filter((f) => f.category === "Experimental").length}
-                  </p>
+                  <p className="text-xl font-bold text-slate-900">{stats.experimental}</p>
                 </div>
               </div>
             </div>
@@ -160,7 +117,7 @@ export default function FeaturesPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-slate-600">Categories</p>
-                  <p className="text-xl font-bold text-slate-900">{Object.keys(groupedFeatures).length}</p>
+                  <p className="text-xl font-bold text-slate-900">{stats.categories}</p>
                 </div>
               </div>
             </div>
@@ -187,8 +144,8 @@ export default function FeaturesPage() {
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
                 <Input
                   placeholder="Search features..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  value={filters.searchTerm}
+                  onChange={(e) => actions.updateSearchTerm(e.target.value)}
                   className="pl-10 border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
                 />
               </div>
@@ -199,111 +156,131 @@ export default function FeaturesPage() {
             </div>
           </CardHeader>
           <CardContent className="p-6">
-            <div className="grid gap-6">
-              {Object.entries(groupedFeatures).map(([category, categoryFeatures]) => (
-                <Card
-                  key={category}
-                  className="bg-gradient-to-br from-slate-50/50 to-white border border-slate-200 rounded-2xl"
-                >
-                  <CardHeader className="pb-4">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                          category === "Experimental"
-                            ? "bg-orange-100"
-                            : category === "Pricing"
-                              ? "bg-green-100"
-                              : category === "Processes"
-                                ? "bg-blue-100"
-                                : "bg-purple-100"
-                        }`}
-                      >
-                        <ToggleLeft
-                          className={`w-4 h-4 ${
+            {ui.isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+              </div>
+            ) : ui.error ? (
+              <div className="text-center py-8 text-red-600">
+                {ui.error}
+              </div>
+            ) : (
+              <div className="grid gap-6">
+                {Object.entries(
+                  features.reduce((acc, feature) => {
+                    if (!acc[feature.category]) {
+                      acc[feature.category] = [];
+                    }
+                    acc[feature.category].push(feature);
+                    return acc;
+                  }, {} as Record<string, typeof features>)
+                ).map(([category, categoryFeatures]) => (
+                  <Card
+                    key={category}
+                    className="bg-gradient-to-br from-slate-50/50 to-white border border-slate-200 rounded-2xl"
+                  >
+                    <CardHeader className="pb-4">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                             category === "Experimental"
-                              ? "text-orange-600"
+                              ? "bg-orange-100"
                               : category === "Pricing"
-                                ? "text-green-600"
+                                ? "bg-green-100"
                                 : category === "Processes"
-                                  ? "text-blue-600"
-                                  : "text-purple-600"
+                                  ? "bg-blue-100"
+                                  : "bg-purple-100"
                           }`}
-                        />
-                      </div>
-                      <div>
-                        <CardTitle className="text-lg font-semibold text-slate-900">{category}</CardTitle>
-                        <CardDescription className="text-slate-600">
-                          {category === "Experimental"
-                            ? "Features in testing phase with limited rollout"
-                            : `Core ${category.toLowerCase()} functionality controls`}
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="grid gap-4">
-                    {categoryFeatures.map((feature, index) => (
-                      <div key={feature.id}>
-                        <div className="flex items-center justify-between">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <Label htmlFor={feature.id} className="font-medium text-slate-900">
-                                {feature.name}
-                              </Label>
-                              <Badge
-                                variant={feature.enabled ? "default" : "secondary"}
-                                className={
-                                  feature.enabled ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"
-                                }
-                              >
-                                {feature.enabled ? "Enabled" : "Disabled"}
-                              </Badge>
-                              {feature.category === "Experimental" && (
-                                <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
-                                  Experimental
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-slate-600">{feature.description}</p>
-                          </div>
-                          <Switch
-                            id={feature.id}
-                            checked={feature.enabled}
-                            onCheckedChange={() => toggleFeature(feature.id)}
+                        >
+                          <ToggleLeft
+                            className={`w-4 h-4 ${
+                              category === "Experimental"
+                                ? "text-orange-600"
+                                : category === "Pricing"
+                                  ? "text-green-600"
+                                  : category === "Processes"
+                                    ? "text-blue-600"
+                                    : "text-purple-600"
+                            }`}
                           />
                         </div>
-
-                        {feature.enabled && feature.category === "Experimental" && (
-                          <div className="mt-3 pl-4 border-l-2 border-orange-200 bg-orange-50/50 rounded-r-lg p-3">
-                            <div className="flex items-center gap-4">
-                              <Label htmlFor={`${feature.id}-rollout`} className="text-sm font-medium text-slate-700">
-                                Rollout Percentage:
-                              </Label>
-                              <div className="flex items-center gap-2">
-                                <Input
-                                  id={`${feature.id}-rollout`}
-                                  type="number"
-                                  min="0"
-                                  max="100"
-                                  value={feature.rolloutPercentage}
-                                  onChange={(e) => updateRollout(feature.id, Number(e.target.value))}
-                                  className="w-20 h-8 border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
-                                />
-                                <span className="text-sm text-slate-600">%</span>
-                              </div>
-                            </div>
-                            <p className="text-xs text-slate-600 mt-1">
-                              Feature will be shown to {feature.rolloutPercentage}% of users
-                            </p>
-                          </div>
-                        )}
-
-                        {index < categoryFeatures.length - 1 && <Separator className="mt-4" />}
+                        <div>
+                          <CardTitle className="text-lg font-semibold text-slate-900">{category}</CardTitle>
+                          <CardDescription className="text-slate-600">
+                            {category === "Experimental"
+                              ? "Features in testing phase with limited rollout"
+                              : `Core ${category.toLowerCase()} functionality controls`}
+                          </CardDescription>
+                        </div>
                       </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                    </CardHeader>
+                    <CardContent className="grid gap-4">
+                      {categoryFeatures.map((feature, index) => (
+                        <div key={feature.id}>
+                          <div className="flex items-center justify-between">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <Label htmlFor={feature.id} className="font-medium text-slate-900">
+                                  {feature.name}
+                                </Label>
+                                <Badge
+                                  variant={feature.enabled ? "default" : "secondary"}
+                                  className={
+                                    feature.enabled ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-600"
+                                  }
+                                >
+                                  {feature.enabled ? "Enabled" : "Disabled"}
+                                </Badge>
+                                {feature.category === "Experimental" && (
+                                  <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                                    Experimental
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="text-sm text-slate-600">{feature.description}</p>
+                            </div>
+                            <Switch
+                              id={feature.id}
+                              checked={feature.enabled}
+                              onCheckedChange={(checked) => handleToggle(feature.id, checked)}
+                              disabled={ui.isSubmitting}
+                            />
+                          </div>
+
+                          {feature.enabled && feature.category === "Experimental" && (
+                            <div className="mt-3 pl-4 border-l-2 border-orange-200 bg-orange-50/50 rounded-r-lg p-3">
+                              <div className="flex items-center gap-4">
+                                <Label htmlFor={`${feature.id}-rollout`} className="text-sm font-medium text-slate-700">
+                                  Rollout Percentage:
+                                </Label>
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    id={`${feature.id}-rollout`}
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={feature.rolloutPercentage}
+                                    onChange={(e) => handleRolloutUpdate(feature.id, Number(e.target.value))}
+                                    className="w-20 h-8 border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
+                                    disabled={ui.isSubmitting}
+                                  />
+                                  <span className="text-sm text-slate-600">%</span>
+                                </div>
+                              </div>
+                              <p className="text-xs text-slate-600 mt-1">
+                                Feature will be shown to {feature.rolloutPercentage}% of users
+                              </p>
+                            </div>
+                          )}
+
+                          {index < categoryFeatures.length - 1 && <Separator className="mt-4" />}
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

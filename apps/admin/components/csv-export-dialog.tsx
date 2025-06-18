@@ -1,9 +1,4 @@
-"use client"
-
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
+import React, { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -11,309 +6,161 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Download, FileText, Filter } from "lucide-react"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Download, Settings } from "lucide-react";
+import { generateCSVExport, downloadCSV, ExportOptions } from "@/utils/csvHandling";
 
 interface CSVExportDialogProps {
-  isOpen: boolean
-  onClose: () => void
-  data: any[]
-  entityType: string
-  fieldMappings: Record<string, { label: string; required: boolean; type: string }>
+  isOpen: boolean;
+  onClose: () => void;
+  data: any[];
+  entityType: string;
+  fieldMappings: Record<string, { label: string; required: boolean; type: string }>;
 }
 
-export function CSVExportDialog({ isOpen, onClose, data, entityType, fieldMappings }: CSVExportDialogProps) {
-  const [selectedFields, setSelectedFields] = useState<string[]>(Object.keys(fieldMappings))
-  const [exportOptions, setExportOptions] = useState({
-    includeHeaders: true,
-    filterActive: "all", // "all", "active", "inactive"
-    format: "csv", // "csv", "excel"
-  })
+export function CSVExportDialog({ 
+  isOpen, 
+  onClose, 
+  data, 
+  entityType,
+  fieldMappings 
+}: CSVExportDialogProps) {
+  const [fileName, setFileName] = useState(`${entityType.toLowerCase()}-export.csv`);
+  const [includeInactive, setIncludeInactive] = useState(true);
+  const [selectedColumns, setSelectedColumns] = useState<string[]>(
+    Object.keys(fieldMappings).filter(key => fieldMappings[key].required)
+  );
+  const [isExporting, setIsExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleFieldToggle = (field: string) => {
-    setSelectedFields((prev) => (prev.includes(field) ? prev.filter((f) => f !== field) : [...prev, field]))
-  }
-
-  const handleSelectAll = () => {
-    setSelectedFields(Object.keys(fieldMappings))
-  }
-
-  const handleSelectNone = () => {
-    setSelectedFields([])
-  }
-
-  const handleSelectRequired = () => {
-    setSelectedFields(
-      Object.entries(fieldMappings)
-        .filter(([_, config]) => config.required)
-        .map(([field]) => field),
-    )
-  }
-
-  const getFilteredData = () => {
-    let filteredData = [...data]
-
-    // Apply active/inactive filter if applicable
-    if (exportOptions.filterActive !== "all" && data.some((item) => "active" in item)) {
-      filteredData = filteredData.filter((item) =>
-        exportOptions.filterActive === "active" ? item.active : !item.active,
-      )
-    }
-
-    return filteredData
-  }
-
-  const generateCSV = () => {
-    const filteredData = getFilteredData()
-
-    // Create headers
-    const headers = selectedFields.map((field) => fieldMappings[field]?.label || field)
-
-    // Create rows
-    const rows = filteredData.map((item) =>
-      selectedFields.map((field) => {
-        const value = item[field]
-
-        // Handle different data types
-        if (value === null || value === undefined) {
-          return ""
-        } else if (typeof value === "boolean") {
-          return value ? "Yes" : "No"
-        } else if (Array.isArray(value)) {
-          return value.join("; ")
-        } else if (typeof value === "object") {
-          return JSON.stringify(value)
-        } else {
-          // Escape commas and quotes for CSV
-          const stringValue = String(value)
-          if (stringValue.includes(",") || stringValue.includes('"') || stringValue.includes("\n")) {
-            return `"${stringValue.replace(/"/g, '""')}"`
-          }
-          return stringValue
+  const handleColumnToggle = (column: string) => {
+    setSelectedColumns(current => {
+      if (current.includes(column)) {
+        // Don't allow deselecting required columns
+        if (fieldMappings[column].required) {
+          return current;
         }
-      }),
-    )
+        return current.filter(c => c !== column);
+      }
+      return [...current, column];
+    });
+  };
 
-    // Combine headers and rows
-    const csvContent = [...(exportOptions.includeHeaders ? [headers] : []), ...rows]
-      .map((row) => row.join(","))
-      .join("\n")
+  const handleExport = async () => {
+    setIsExporting(true);
+    setError(null);
 
-    return csvContent
-  }
+    try {
+      const options: ExportOptions = {
+        includeInactive,
+        selectedColumns,
+        fileName
+      };
 
-  const downloadCSV = () => {
-    const csvContent = generateCSV()
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const link = document.createElement("a")
-
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob)
-      link.setAttribute("href", url)
-      link.setAttribute("download", `${entityType}_export_${new Date().toISOString().split("T")[0]}.csv`)
-      link.style.visibility = "hidden"
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
+      const csvContent = generateCSVExport(data, options);
+      downloadCSV(csvContent, fileName);
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export data');
+    } finally {
+      setIsExporting(false);
     }
-
-    onClose()
-  }
-
-  const filteredData = getFilteredData()
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5" />
-            Export {entityType.charAt(0).toUpperCase() + entityType.slice(1)} to CSV
-          </DialogTitle>
+          <DialogTitle>Export {entityType}</DialogTitle>
           <DialogDescription>
-            Select the fields you want to include in your export and configure export options
+            Configure your export settings and download the data as a CSV file.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
+        <div className="py-4 space-y-6">
+          {/* File Name Input */}
+          <div className="space-y-2">
+            <Label htmlFor="fileName">File Name</Label>
+            <Input
+              id="fileName"
+              value={fileName}
+              onChange={(e) => setFileName(e.target.value)}
+              placeholder="Enter file name"
+              className="w-full"
+            />
+          </div>
+
           {/* Export Options */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Filter className="h-5 w-5" />
-                Export Options
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Filter Records</Label>
-                  <Select
-                    value={exportOptions.filterActive}
-                    onValueChange={(value) => setExportOptions({ ...exportOptions, filterActive: value })}
-                  >
-                    <SelectTrigger className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Records</SelectItem>
-                      <SelectItem value="active">Active Only</SelectItem>
-                      <SelectItem value="inactive">Inactive Only</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Export Format</Label>
-                  <Select
-                    value={exportOptions.format}
-                    onValueChange={(value) => setExportOptions({ ...exportOptions, format: value })}
-                  >
-                    <SelectTrigger className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="csv">CSV (.csv)</SelectItem>
-                      <SelectItem value="excel">Excel (.xlsx)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="includeInactive"
+                checked={includeInactive}
+                onCheckedChange={(checked) => setIncludeInactive(checked as boolean)}
+              />
+              <Label htmlFor="includeInactive">Include inactive items</Label>
+            </div>
 
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="includeHeaders"
-                  checked={exportOptions.includeHeaders}
-                  onCheckedChange={(checked) => setExportOptions({ ...exportOptions, includeHeaders: !!checked })}
-                  className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
-                />
-                <Label htmlFor="includeHeaders">Include column headers</Label>
-              </div>
-
-              <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                <p className="text-sm text-blue-700">
-                  <strong>Export Summary:</strong> {filteredData.length} records will be exported with{" "}
-                  {selectedFields.length} fields
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Field Selection */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Select Fields to Export</CardTitle>
-              <CardDescription>Choose which fields to include in your export file</CardDescription>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={handleSelectAll}>
-                  Select All
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleSelectNone}>
-                  Select None
-                </Button>
-                <Button variant="outline" size="sm" onClick={handleSelectRequired}>
-                  Required Only
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-3">
-                {Object.entries(fieldMappings).map(([field, config]) => (
-                  <div key={field} className="flex items-center space-x-3 p-2 border rounded-lg">
+            {/* Column Selection */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Select Columns to Export</Label>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                {Object.entries(fieldMappings).map(([key, value]) => (
+                  <div key={key} className="flex items-center space-x-2">
                     <Checkbox
-                      id={field}
-                      checked={selectedFields.includes(field)}
-                      onCheckedChange={() => handleFieldToggle(field)}
-                      className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
+                      id={`column-${key}`}
+                      checked={selectedColumns.includes(key)}
+                      onCheckedChange={() => handleColumnToggle(key)}
+                      disabled={value.required}
                     />
-                    <div className="flex-1">
-                      <Label htmlFor={field} className="font-medium cursor-pointer">
-                        {config.label}
-                      </Label>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="outline" className="text-xs">
-                          {config.type}
-                        </Badge>
-                        {config.required && (
-                          <Badge variant="destructive" className="text-xs">
-                            Required
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
+                    <Label 
+                      htmlFor={`column-${key}`}
+                      className={value.required ? 'font-medium' : ''}
+                    >
+                      {value.label}
+                      {value.required && ' *'}
+                    </Label>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
 
-          {/* Preview */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Export Preview
-              </CardTitle>
-              <CardDescription>Preview of the first few rows that will be exported</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse border border-slate-300">
-                  {exportOptions.includeHeaders && (
-                    <thead>
-                      <tr className="bg-slate-50">
-                        {selectedFields.map((field) => (
-                          <th key={field} className="border border-slate-300 px-2 py-1 text-left font-medium">
-                            {fieldMappings[field]?.label || field}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                  )}
-                  <tbody>
-                    {filteredData.slice(0, 3).map((item, index) => (
-                      <tr key={index} className="hover:bg-slate-50">
-                        {selectedFields.map((field) => (
-                          <td key={field} className="border border-slate-300 px-2 py-1 max-w-32 truncate">
-                            {item[field] === null || item[field] === undefined
-                              ? "—"
-                              : typeof item[field] === "boolean"
-                                ? item[field]
-                                  ? "Yes"
-                                  : "No"
-                                : Array.isArray(item[field])
-                                  ? item[field].join("; ")
-                                  : String(item[field])}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {filteredData.length > 3 && (
-                <p className="text-sm text-slate-500 mt-2">... and {filteredData.length - 3} more rows</p>
-              )}
-            </CardContent>
-          </Card>
+          {/* Export Summary */}
+          <Alert>
+            <Settings className="h-4 w-4" />
+            <AlertDescription>
+              Exporting {data.length} {entityType.toLowerCase()}
+              {!includeInactive && ' (active only)'} with {selectedColumns.length} columns
+            </AlertDescription>
+          </Alert>
+
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            onClick={downloadCSV}
-            disabled={selectedFields.length === 0}
-            className="bg-[#d4c273] hover:bg-[#d4c273]/90 text-[#fefefe]"
+          <Button 
+            onClick={handleExport}
+            disabled={isExporting || selectedColumns.length === 0}
+            className="bg-blue-600 hover:bg-blue-700"
           >
-            <Download className="h-4 w-4 mr-2" />
-            Export {filteredData.length} Records
+            <Download className="w-4 h-4 mr-2" />
+            {isExporting ? 'Exporting...' : 'Export CSV'}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }
