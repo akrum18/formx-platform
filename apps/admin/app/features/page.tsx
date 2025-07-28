@@ -7,79 +7,50 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
-import { ToggleLeft, Search, Filter } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { ToggleLeft, Search, Filter, AlertCircle } from "lucide-react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
+import {
+  useFeatureFlags,
+  useUpdateFeatureFlag,
+  type FeatureFlag
+} from "@/lib/api/feature-flags"
 
-interface FeatureFlag {
-  id: string
-  name: string
-  description: string
-  enabled: boolean
-  rolloutPercentage: number
-  category: string
-}
 
 export default function FeaturesPage() {
-  const [features, setFeatures] = useState<FeatureFlag[]>([
-    {
-      id: "5axis-cnc",
-      name: "5-Axis CNC Quoting",
-      description: "Enable 5-axis CNC machining in the quoting system",
-      enabled: true,
-      rolloutPercentage: 100,
-      category: "Processes",
-    },
-    {
-      id: "coating-options",
-      name: "Coating & Finishing Options",
-      description: "Show coating and finishing options in quotes",
-      enabled: true,
-      rolloutPercentage: 100,
-      category: "Finishes",
-    },
-    {
-      id: "rush-orders",
-      name: "Rush Order Pricing",
-      description: "Allow customers to request rush delivery with premium pricing",
-      enabled: true,
-      rolloutPercentage: 100,
-      category: "Pricing",
-    },
-    {
-      id: "volume-discounts",
-      name: "Volume Discount Display",
-      description: "Show volume-based pricing tiers to customers",
-      enabled: false,
-      rolloutPercentage: 25,
-      category: "Pricing",
-    },
-    {
-      id: "material-suggestions",
-      name: "Material Suggestions",
-      description: "AI-powered material recommendations based on part geometry",
-      enabled: false,
-      rolloutPercentage: 10,
-      category: "Experimental",
-    },
-    {
-      id: "instant-quotes",
-      name: "Instant Quote Generation",
-      description: "Generate quotes without manual review for simple parts",
-      enabled: false,
-      rolloutPercentage: 5,
-      category: "Experimental",
-    },
-  ])
+  // API Hooks
+  const { data: features = [], isLoading, error } = useFeatureFlags()
+  const updateFeatureFlag = useUpdateFeatureFlag()
 
+  // UI State
   const [searchTerm, setSearchTerm] = useState("")
 
-  const toggleFeature = (id: string) => {
-    setFeatures(features.map((f) => (f.id === id ? { ...f, enabled: !f.enabled } : f)))
+  // Handlers
+  const toggleFeature = async (id: string) => {
+    const feature = features.find(f => f.id === id)
+    if (!feature) return
+
+    try {
+      await updateFeatureFlag.mutateAsync({
+        id,
+        data: { enabled: !feature.enabled }
+      })
+    } catch (error) {
+      console.error('Failed to toggle feature:', error)
+    }
   }
 
-  const updateRollout = (id: string, percentage: number) => {
-    setFeatures(features.map((f) => (f.id === id ? { ...f, rolloutPercentage: percentage } : f)))
+  const updateRollout = async (id: string, percentage: number) => {
+    try {
+      await updateFeatureFlag.mutateAsync({
+        id,
+        data: { rolloutPercentage: percentage }
+      })
+    } catch (error) {
+      console.error('Failed to update rollout:', error)
+    }
   }
 
   const filteredFeatures = features.filter(
@@ -99,6 +70,49 @@ export default function FeaturesPage() {
     },
     {} as Record<string, FeatureFlag[]>,
   )
+
+  // Loading State
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
+        <div className="max-w-7xl mx-auto p-8">
+          <div className="mb-8">
+            <div className="flex items-center gap-4 mb-4">
+              <Skeleton className="h-10 w-10" />
+              <div className="flex items-center justify-between w-full">
+                <div className="space-y-1">
+                  <Skeleton className="h-10 w-64" />
+                  <Skeleton className="h-6 w-96" />
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <Skeleton key={i} className="h-20" />
+              ))}
+            </div>
+          </div>
+          <Skeleton className="h-96" />
+        </div>
+      </div>
+    )
+  }
+
+  // Error State
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
+        <div className="max-w-7xl mx-auto p-8">
+          <Alert className="bg-red-50 border-red-200">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-red-700">
+              Failed to load feature flags: {error.message}
+            </AlertDescription>
+          </Alert>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
@@ -285,7 +299,12 @@ export default function FeaturesPage() {
                                   min="0"
                                   max="100"
                                   value={feature.rolloutPercentage}
-                                  onChange={(e) => updateRollout(feature.id, Number(e.target.value))}
+                                  onChange={(e) => {
+                                    const value = Number(e.target.value)
+                                    if (value >= 0 && value <= 100) {
+                                      updateRollout(feature.id, value)
+                                    }
+                                  }}
                                   className="w-20 h-8 border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
                                 />
                                 <span className="text-sm text-slate-600">%</span>

@@ -9,6 +9,9 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@formx/database": "workspace:*",
+    "@formx/auth": "workspace:*",
+    "@tanstack/react-query": "^5.80.7",
     "@emotion/is-prop-valid": "latest",
     "@hookform/resolvers": "latest",
     "@radix-ui/react-accordion": "1.2.2",
@@ -62,6 +65,7 @@
     "zod": "latest"
   },
   "devDependencies": {
+    "@tanstack/react-query-devtools": "^5.80.7",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",

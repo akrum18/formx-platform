@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -26,70 +26,17 @@ import { getTableColumnClasses } from "@/lib/table-utils"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { CSVImportDialog } from "@/components/csv-import-dialog"
 import { CSVExportDialog } from "@/components/csv-export-dialog"
+import {
+  useMaterials,
+  useCreateMaterial,
+  useUpdateMaterial,
+  useDeleteMaterial,
+  useToggleMaterialActive,
+  type Material as APIMaterial
+} from "@/lib/api/materials"
 
-interface Material {
-  id: string
-  name: string
-  cost: number
-  markup: number
-  density: number
-  unit: string
-  processes: string[]
-  active: boolean
-}
+type Material = APIMaterial
 
-const mockMaterials: Material[] = [
-  {
-    id: "1",
-    name: "Aluminum 6061",
-    cost: 3.5,
-    markup: 25,
-    density: 2.7,
-    unit: "lb",
-    processes: ["CNC Milling", "CNC Turning", "5-Axis"],
-    active: true,
-  },
-  {
-    id: "2",
-    name: "Steel 1018",
-    cost: 2.8,
-    markup: 30,
-    density: 7.87,
-    unit: "lb",
-    processes: ["CNC Milling", "CNC Turning"],
-    active: true,
-  },
-  {
-    id: "3",
-    name: "Titanium Ti-6Al-4V",
-    cost: 45.0,
-    markup: 40,
-    density: 4.43,
-    unit: "lb",
-    processes: ["5-Axis", "CNC Milling"],
-    active: false,
-  },
-  {
-    id: "4",
-    name: "Stainless Steel 316",
-    cost: 4.2,
-    markup: 35,
-    density: 8.0,
-    unit: "lb",
-    processes: ["CNC Milling", "CNC Turning"],
-    active: true,
-  },
-  {
-    id: "5",
-    name: "Brass C360",
-    cost: 6.8,
-    markup: 28,
-    density: 8.5,
-    unit: "lb",
-    processes: ["CNC Turning", "CNC Milling"],
-    active: false,
-  },
-]
 
 const groupOptions = [
   { value: "active", label: "Status" },
@@ -108,7 +55,11 @@ const materialFieldMappings = {
 }
 
 export default function MaterialsPage() {
-  const [materials, setMaterials] = useState<Material[]>(mockMaterials)
+  const { data: materials = [], isLoading, error } = useMaterials()
+  const createMaterial = useCreateMaterial()
+  const updateMaterial = useUpdateMaterial()
+  const deleteMaterial = useDeleteMaterial()
+  const toggleActive = useToggleMaterialActive()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null)
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "name", direction: "asc" })
@@ -124,8 +75,8 @@ export default function MaterialsPage() {
     }))
   }
 
-  const toggleMaterial = (id: string) => {
-    setMaterials(materials.map((m) => (m.id === id ? { ...m, active: !m.active } : m)))
+  const toggleMaterial = (id: string, active: boolean) => {
+    toggleActive.mutate({ id, active })
   }
 
   const handleEdit = (material: Material) => {
@@ -168,7 +119,11 @@ export default function MaterialsPage() {
       </TableCell>
       <TableCell>
         <div className="flex items-center space-x-3">
-          <Switch checked={material.active} onCheckedChange={() => toggleMaterial(material.id)} />
+          <Switch 
+            checked={material.active} 
+            onCheckedChange={(checked) => toggleMaterial(material.id, checked)} 
+            disabled={toggleActive.isPending}
+          />
           <Badge
             variant={material.active ? "default" : "secondary"}
             className={
@@ -218,7 +173,7 @@ export default function MaterialsPage() {
               onSort={handleSort}
               className={columnClasses.cost}
             >
-              Cost per {mockMaterials[0]?.unit}
+              Cost per Unit
             </SortableTableHeader>
             <SortableTableHeader
               sortKey="markup"
@@ -271,7 +226,9 @@ export default function MaterialsPage() {
       active: item.active !== undefined ? item.active : true,
     }))
 
-    setMaterials([...materials, ...newMaterials])
+    // Note: CSV import would need to call the API to create materials
+    // For now, this is a placeholder for the import functionality
+    console.log('Would create materials via API:', newMaterials)
     console.log(`Imported ${newMaterials.length} materials`)
   }
 
@@ -324,7 +281,7 @@ export default function MaterialsPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-[#908d8d]">Total Materials</p>
-                  <p className="text-xl font-bold text-[#525253]">{materials.length}</p>
+                  <p className="text-xl font-bold text-[#525253]">{isLoading ? '...' : materials.length}</p>
                 </div>
               </div>
             </div>
@@ -335,7 +292,7 @@ export default function MaterialsPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-[#908d8d]">Active Materials</p>
-                  <p className="text-xl font-bold text-[#525253]">{materials.filter((m) => m.active).length}</p>
+                  <p className="text-xl font-bold text-[#525253]">{isLoading ? '...' : materials.filter((m) => m.active).length}</p>
                 </div>
               </div>
             </div>
@@ -347,7 +304,7 @@ export default function MaterialsPage() {
                 <div>
                   <p className="text-sm font-medium text-[#908d8d]">Avg Markup</p>
                   <p className="text-xl font-bold text-[#525253]">
-                    {Math.round(materials.reduce((sum, m) => sum + m.markup, 0) / materials.length)}%
+                    {isLoading || materials.length === 0 ? '...' : Math.round(materials.reduce((sum, m) => sum + m.markup, 0) / materials.length)}%
                   </p>
                 </div>
               </div>
@@ -360,7 +317,7 @@ export default function MaterialsPage() {
                 <div>
                   <p className="text-sm font-medium text-[#908d8d]">Avg Cost</p>
                   <p className="text-xl font-bold text-[#525253]">
-                    ${(materials.reduce((sum, m) => sum + m.cost, 0) / materials.length).toFixed(2)}
+                    {isLoading || materials.length === 0 ? '...' : `$${(materials.reduce((sum, m) => sum + m.cost, 0) / materials.length).toFixed(2)}`}
                   </p>
                 </div>
               </div>
@@ -400,6 +357,12 @@ export default function MaterialsPage() {
             </div>
           </CardHeader>
           <CardContent className="p-6">
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                <p className="text-red-600 text-sm">Error loading materials: {error.message}</p>
+              </div>
+            )}
+            
             <TableControls
               groupOptions={groupOptions}
               currentGroup={groupBy}
@@ -407,7 +370,11 @@ export default function MaterialsPage() {
               onClearGroup={() => setGroupBy("")}
             />
 
-            {groupBy ? (
+            {isLoading ? (
+              <div className="flex justify-center py-8">
+                <div className="text-[#908d8d]">Loading materials...</div>
+              </div>
+            ) : groupBy ? (
               <div>
                 {Object.entries(groupedMaterials).map(([groupValue, groupMaterials]) => (
                   <GroupedTableSection

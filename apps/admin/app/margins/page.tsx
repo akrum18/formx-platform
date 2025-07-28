@@ -7,128 +7,31 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Separator } from "@/components/ui/separator"
-import { Save, Edit, Route, DollarSign, Settings, Search, Filter, Wrench, AlertCircle } from "lucide-react"
+import { Save, Edit, Route, DollarSign, Settings, Search, Filter, Wrench, AlertCircle, GitBranch, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader } from "@/components/ui/dialog"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { 
+  usePricingConfig, 
+  useUpdatePricingConfig, 
+  useUpdateRoutingPricing,
+  calculatePrice,
+  getTierColor,
+  getProcessesInRouting,
+  type PricingConfiguration,
+  type RoutingPricing,
+  type TierOverride
+} from "@/lib/api/pricing-config"
+import { useCreatePricingVersion, generateVersionNumber } from "@/lib/api/pricing-versions"
 
-interface VolumeBreak {
-  id: string
-  minQuantity: number
-  maxQuantity: number | null
-  discountPercent: number
-}
+// Types are now imported from the API module
 
-interface TierMultiplier {
-  economy: number
-  standard: number
-  rush: number
-}
-
-interface RoutingPricing {
-  routingId: string
-  routingName: string
-  category: string
-  baseCost: number
-  materialMarkup: number
-  finishingCost: number
-  leadTime: number
-  // Tier-specific overrides
-  tierOverrides: {
-    economy?: {
-      multiplier?: number
-      materialMarkupOverride?: number
-      finishingCostOverride?: number
-      leadTimeOverride?: number
-    }
-    standard?: {
-      multiplier?: number
-      materialMarkupOverride?: number
-      finishingCostOverride?: number
-      leadTimeOverride?: number
-    }
-    rush?: {
-      multiplier?: number
-      materialMarkupOverride?: number
-      finishingCostOverride?: number
-      leadTimeOverride?: number
-    }
-  }
-}
-
-interface PricingConfiguration {
-  routings: RoutingPricing[]
-  globalSettings: {
-    defaultTierMultipliers: TierMultiplier
-    volumeBreaks: VolumeBreak[]
-    minimumOrderValue: number
-  }
-}
-
-// Mock routing data
-const mockRoutings: RoutingPricing[] = [
-  {
-    routingId: "1",
-    routingName: "Laser Cutting - Deburring - Press Brake Bending - TIG Welding",
-    category: "Sheet Metal",
-    baseCost: 185.5,
-    materialMarkup: 35,
-    finishingCost: 0.15,
-    leadTime: 5,
-    tierOverrides: {
-      rush: {
-        multiplier: 1.6, // Higher than default 1.5x for complex welding
-        leadTimeOverride: 3,
-      },
-    },
-  },
-  {
-    routingId: "2",
-    routingName: "CNC Milling - Deburring - Anodizing",
-    category: "Machining",
-    baseCost: 245.75,
-    materialMarkup: 40,
-    finishingCost: 0.25,
-    leadTime: 7,
-    tierOverrides: {
-      economy: {
-        materialMarkupOverride: 35, // Reduced markup for economy
-      },
-      rush: {
-        materialMarkupOverride: 45, // Premium materials for rush
-        leadTimeOverride: 4,
-      },
-    },
-  },
-  {
-    routingId: "4",
-    routingName: "CNC Milling",
-    category: "Machining",
-    baseCost: 135.0,
-    materialMarkup: 35,
-    finishingCost: 0,
-    leadTime: 3,
-    tierOverrides: {},
-  },
-  {
-    routingId: "5",
-    routingName: "Laser Cutting",
-    category: "Cutting",
-    baseCost: 45.25,
-    materialMarkup: 30,
-    finishingCost: 0,
-    leadTime: 2,
-    tierOverrides: {
-      economy: {
-        multiplier: 0.85, // Even lower for simple cutting
-      },
-    },
-  },
-]
-
-// Add mock process data after the mockRoutings array
+// Mock process data for process pricing functionality
 const mockProcesses = [
   { id: "1", name: "Laser Cutting", category: "Primary", hourlyRate: 95, setupTime: 15 },
   { id: "2", name: "CNC Milling", category: "Primary", hourlyRate: 85, setupTime: 30 },
@@ -141,27 +44,14 @@ const mockProcesses = [
   { id: "13", name: "Powder Coating", category: "Finishing", hourlyRate: 65, setupTime: 20 },
 ]
 
-const defaultVolumeBreaks: VolumeBreak[] = [
-  { id: "1", minQuantity: 1, maxQuantity: 9, discountPercent: 0 },
-  { id: "2", minQuantity: 10, maxQuantity: 49, discountPercent: 5 },
-  { id: "3", minQuantity: 50, maxQuantity: 99, discountPercent: 10 },
-  { id: "4", minQuantity: 100, maxQuantity: null, discountPercent: 15 },
-]
-
 export default function MarginsPage() {
-  const [config, setConfig] = useState<PricingConfiguration>({
-    routings: mockRoutings,
-    globalSettings: {
-      defaultTierMultipliers: {
-        economy: 0.9,
-        standard: 1.0,
-        rush: 1.5,
-      },
-      volumeBreaks: defaultVolumeBreaks,
-      minimumOrderValue: 50,
-    },
-  })
+  // API hooks
+  const { data: config, isLoading, error } = usePricingConfig()
+  const updatePricingConfig = useUpdatePricingConfig()
+  const updateRoutingPricing = useUpdateRoutingPricing()
+  const createVersion = useCreatePricingVersion()
 
+  // UI state
   const [editingRouting, setEditingRouting] = useState<RoutingPricing | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
@@ -169,146 +59,158 @@ export default function MarginsPage() {
   const [selectedProcesses, setSelectedProcesses] = useState<string[]>([])
   const [isProcessPricingOpen, setIsProcessPricingOpen] = useState(false)
   const [selectedProcess, setSelectedProcess] = useState<any>(null)
+  const [isVersionDialogOpen, setIsVersionDialogOpen] = useState(false)
+  const [versionData, setVersionData] = useState({
+    description: "",
+    changes: [""]
+  })
 
-  // Helper functions - moved to top to avoid initialization errors
-  const getProcessesInRouting = (routingName: string) => {
-    return routingName.split(" - ").map((name) => name.trim())
-  }
-
+  // Helper functions
   const getRoutingsByProcess = (processName: string) => {
+    if (!config?.routings) return []
     return config.routings.filter((routing) => getProcessesInRouting(routing.routingName).includes(processName))
   }
 
-  // Now define the other variables that depend on these functions
-  const categories = [...new Set(config.routings.map((r) => r.category))]
-  const allProcesses = [...new Set(config.routings.flatMap((r) => getProcessesInRouting(r.routingName)))]
+  // Derived data
+  const categories = config?.routings ? [...new Set(config.routings.map((r) => r.category))] : []
+  const allProcesses = config?.routings ? [...new Set(config.routings.flatMap((r) => getProcessesInRouting(r.routingName)))] : []
 
-  const handleSave = () => {
-    console.log("Saving routing-based pricing configuration:", config)
+  const handleSave = async () => {
+    if (!config) return
+    
+    try {
+      await updatePricingConfig.mutateAsync(config)
+      console.log("Pricing configuration saved successfully")
+    } catch (error) {
+      console.error("Failed to save pricing configuration:", error)
+    }
   }
 
-  const updateRoutingOverride = (
+  const updateRoutingOverride = async (
     routingId: string,
     tier: "economy" | "standard" | "rush",
     field: string,
     value: any,
   ) => {
-    setConfig({
-      ...config,
-      routings: config.routings.map((routing) => {
-        if (routing.routingId === routingId) {
-          return {
-            ...routing,
-            tierOverrides: {
-              ...routing.tierOverrides,
-              [tier]: {
-                ...routing.tierOverrides[tier],
-                [field]: value,
-              },
-            },
-          }
-        }
-        return routing
-      }),
-    })
-  }
+    if (!config) return
+    
+    const routing = config.routings.find(r => r.routingId === routingId)
+    if (!routing) return
 
-  const clearRoutingOverride = (routingId: string, tier: "economy" | "standard" | "rush", field: string) => {
-    setConfig({
-      ...config,
-      routings: config.routings.map((routing) => {
-        if (routing.routingId === routingId) {
-          const newOverrides = { ...routing.tierOverrides }
-          if (newOverrides[tier]) {
-            delete newOverrides[tier][field as keyof (typeof newOverrides)[tier]]
-            if (Object.keys(newOverrides[tier]).length === 0) {
-              delete newOverrides[tier]
-            }
-          }
-          return {
-            ...routing,
-            tierOverrides: newOverrides,
-          }
-        }
-        return routing
-      }),
-    })
-  }
+    const updatedTierOverrides = {
+      ...routing.tierOverrides,
+      [tier]: {
+        ...routing.tierOverrides[tier],
+        [field]: value,
+      },
+    }
 
-  const calculatePrice = (routing: RoutingPricing, tier: "economy" | "standard" | "rush", quantity = 1) => {
-    const tierOverride = routing.tierOverrides[tier]
-    const defaultMultiplier = config.globalSettings.defaultTierMultipliers[tier]
-
-    // Get effective values
-    const multiplier = tierOverride?.multiplier ?? defaultMultiplier
-    const materialMarkup = tierOverride?.materialMarkupOverride ?? routing.materialMarkup
-    const finishingCost = tierOverride?.finishingCostOverride ?? routing.finishingCost
-
-    // Calculate costs
-    const processingCost = routing.baseCost * multiplier
-    const materialCost = 100 * (1 + materialMarkup / 100) // Assuming $100 material
-    const finishingCostTotal = finishingCost * 100 // Assuming 100 sq in
-
-    // Apply volume discounts
-    const applicableBreak = config.globalSettings.volumeBreaks.find(
-      (vb) => quantity >= vb.minQuantity && (vb.maxQuantity === null || quantity <= vb.maxQuantity),
-    )
-    const discount = applicableBreak?.discountPercent || 0
-
-    const subtotal = processingCost + materialCost + finishingCostTotal
-    const finalPrice = subtotal * (1 - discount / 100)
-
-    return {
-      processingCost,
-      materialCost,
-      finishingCost: finishingCostTotal,
-      subtotal,
-      discount,
-      finalPrice,
-      effectiveMultiplier: multiplier,
-      effectiveMaterialMarkup: materialMarkup,
-      effectiveFinishingCost: finishingCost,
+    try {
+      await updateRoutingPricing.mutateAsync({
+        routingId,
+        data: { tierOverrides: updatedTierOverrides }
+      })
+    } catch (error) {
+      console.error("Failed to update routing override:", error)
     }
   }
 
-  const getTierColor = (tier: string) => {
-    switch (tier) {
-      case "economy":
-        return "text-green-600 bg-green-50 border-green-200"
-      case "standard":
-        return "text-blue-600 bg-blue-50 border-blue-200"
-      case "rush":
-        return "text-red-600 bg-red-50 border-red-200"
-      default:
-        return "text-slate-600 bg-slate-50 border-slate-200"
+  const clearRoutingOverride = async (routingId: string, tier: "economy" | "standard" | "rush", field: string) => {
+    if (!config) return
+    
+    const routing = config.routings.find(r => r.routingId === routingId)
+    if (!routing) return
+
+    const newOverrides = { ...routing.tierOverrides }
+    if (newOverrides[tier]) {
+      delete newOverrides[tier][field as keyof (typeof newOverrides)[tier]]
+      if (Object.keys(newOverrides[tier]).length === 0) {
+        delete newOverrides[tier]
+      }
+    }
+
+    try {
+      await updateRoutingPricing.mutateAsync({
+        routingId,
+        data: { tierOverrides: newOverrides }
+      })
+    } catch (error) {
+      console.error("Failed to clear routing override:", error)
     }
   }
 
-  const updateProcessPricing = (processName: string, newHourlyRate: number) => {
+  const handleCreateVersion = () => {
+    setVersionData({
+      description: "",
+      changes: [""]
+    })
+    setIsVersionDialogOpen(true)
+  }
+
+  const handleSaveVersion = async () => {
+    if (!versionData.description || versionData.changes.filter(c => c.trim()).length === 0) {
+      return // Basic validation
+    }
+
+    try {
+      await createVersion.mutateAsync({
+        version: generateVersionNumber(),
+        description: versionData.description,
+        changes: versionData.changes.filter(c => c.trim())
+      })
+      setIsVersionDialogOpen(false)
+      setVersionData({ description: "", changes: [""] })
+      console.log("New pricing version created successfully")
+    } catch (error) {
+      console.error("Failed to create version:", error)
+    }
+  }
+
+  const addVersionChangeField = () => {
+    setVersionData(prev => ({ ...prev, changes: [...prev.changes, ""] }))
+  }
+
+  const updateVersionChangeField = (index: number, value: string) => {
+    setVersionData(prev => ({
+      ...prev,
+      changes: prev.changes.map((change, i) => i === index ? value : change)
+    }))
+  }
+
+  const removeVersionChangeField = (index: number) => {
+    setVersionData(prev => ({
+      ...prev,
+      changes: prev.changes.filter((_, i) => i !== index || prev.changes.length === 1)
+    }))
+  }
+
+  // Helper functions are now imported from the API module
+
+  const updateProcessPricing = async (processName: string, newHourlyRate: number) => {
     // This would update the process in the processes system
     // and recalculate all routing costs that use this process
     console.log(`Updating ${processName} hourly rate to $${newHourlyRate}`)
 
+    if (!config) return
+
     // Update routing base costs (simplified calculation)
-    setConfig({
-      ...config,
-      routings: config.routings.map((routing) => {
-        const processes = getProcessesInRouting(routing.routingName)
-        if (processes.includes(processName)) {
-          // Simplified: add $10 to base cost for every $5 increase in hourly rate
-          const process = mockProcesses.find((p) => p.name === processName)
-          if (process) {
-            const rateDiff = newHourlyRate - process.hourlyRate
-            const costAdjustment = (rateDiff / 5) * 10
-            return {
-              ...routing,
-              baseCost: Math.max(routing.baseCost + costAdjustment, 0),
-            }
-          }
-        }
-        return routing
-      }),
-    })
+    const routingsToUpdate = config.routings.filter(routing => 
+      getProcessesInRouting(routing.routingName).includes(processName)
+    )
+
+    for (const routing of routingsToUpdate) {
+      const process = mockProcesses.find((p) => p.name === processName)
+      if (process) {
+        const rateDiff = newHourlyRate - process.hourlyRate
+        const costAdjustment = (rateDiff / 5) * 10
+        const newBaseCost = Math.max(routing.baseCost + costAdjustment, 0)
+
+        await updateRoutingPricing.mutateAsync({
+          routingId: routing.routingId,
+          data: { baseCost: newBaseCost }
+        })
+      }
+    }
 
     // Update the mock process data
     const processIndex = mockProcesses.findIndex((p) => p.name === processName)
@@ -317,7 +219,7 @@ export default function MarginsPage() {
     }
   }
 
-  const filteredRoutings = config.routings.filter((routing) => {
+  const filteredRoutings = config?.routings?.filter((routing) => {
     // Search filter
     const matchesSearch =
       searchTerm === "" ||
@@ -336,7 +238,46 @@ export default function MarginsPage() {
       selectedProcesses.some((process) => getProcessesInRouting(routing.routingName).includes(process))
 
     return matchesSearch && matchesCategory && matchesProcess
-  })
+  }) || []
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
+        <div className="max-w-7xl mx-auto p-8">
+          <div className="mb-8">
+            <Skeleton className="h-10 w-96 mb-4" />
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <Skeleton key={i} className="h-20" />
+              ))}
+            </div>
+          </div>
+          <Skeleton className="h-96" />
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
+        <div className="max-w-7xl mx-auto p-8">
+          <Alert className="bg-red-50 border-red-200">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-red-700">
+              Failed to load pricing configuration: {error.message}
+            </AlertDescription>
+          </Alert>
+        </div>
+      </div>
+    )
+  }
+
+  if (!config) {
+    return null
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
@@ -352,11 +293,20 @@ export default function MarginsPage() {
               </div>
               <div className="flex items-center gap-3">
                 <Button
+                  onClick={handleCreateVersion}
+                  variant="outline"
+                  className="h-10 px-4 border-[#908d8d] hover:bg-[#e8dcaa]/50 text-[#525253]"
+                >
+                  <GitBranch className="h-4 w-4 mr-2" />
+                  Create Version
+                </Button>
+                <Button
                   onClick={handleSave}
+                  disabled={updatePricingConfig.isPending}
                   className="h-10 px-4 bg-[#d4c273] hover:bg-[#d4c273]/90 text-[#fefefe] shadow-lg"
                 >
                   <Save className="h-4 w-4 mr-2" />
-                  Save Configuration
+                  {updatePricingConfig.isPending ? "Saving..." : "Save Configuration"}
                 </Button>
               </div>
             </div>
@@ -658,7 +608,7 @@ export default function MarginsPage() {
                     {/* Tier Pricing Grid */}
                     <div className="grid grid-cols-3 gap-6">
                       {(["economy", "standard", "rush"] as const).map((tier) => {
-                        const pricing = calculatePrice(routing, tier, 10)
+                        const pricing = calculatePrice(routing, tier, config.globalSettings.defaultTierMultipliers, config.globalSettings.volumeBreaks, 10)
                         const hasOverrides =
                           routing.tierOverrides[tier] && Object.keys(routing.tierOverrides[tier]).length > 0
 
@@ -914,7 +864,7 @@ export default function MarginsPage() {
                   <h4 className="font-medium text-blue-900 mb-3">Live Pricing Preview (Quantity: 10)</h4>
                   <div className="grid grid-cols-3 gap-4">
                     {(["economy", "standard", "rush"] as const).map((tier) => {
-                      const pricing = calculatePrice(editingRouting, tier, 10)
+                      const pricing = calculatePrice(editingRouting, tier, config.globalSettings.defaultTierMultipliers, config.globalSettings.volumeBreaks, 10)
                       return (
                         <div key={tier} className="text-center">
                           <p className="text-sm font-medium capitalize">{tier}</p>
@@ -1030,6 +980,82 @@ export default function MarginsPage() {
                 className="bg-[#d4c273] hover:bg-[#d4c273]/90 text-[#fefefe]"
               >
                 Update Process Pricing
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Create Version Dialog */}
+        <Dialog open={isVersionDialogOpen} onOpenChange={setIsVersionDialogOpen}>
+          <DialogContent className="sm:max-w-[425px] bg-white rounded-2xl border-0 shadow-xl">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-semibold text-slate-900">
+                Create New Pricing Version
+              </DialogTitle>
+              <DialogDescription className="text-slate-600">
+                Create a new draft version to track these pricing changes
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-6 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="version-desc" className="text-sm font-medium text-slate-700">
+                  Description
+                </Label>
+                <Textarea
+                  id="version-desc"
+                  value={versionData.description}
+                  onChange={(e) => setVersionData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Describe the changes in this version..."
+                  rows={3}
+                  className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-sm font-medium text-slate-700">
+                  Changes
+                </Label>
+                {versionData.changes.map((change, index) => (
+                  <div key={index} className="flex gap-2">
+                    <Input
+                      value={change}
+                      onChange={(e) => updateVersionChangeField(index, e.target.value)}
+                      placeholder={`Change ${index + 1}...`}
+                      className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
+                    />
+                    {versionData.changes.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeVersionChangeField(index)}
+                        className="px-3"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addVersionChangeField}
+                  className="w-fit"
+                >
+                  Add Change
+                </Button>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsVersionDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleSaveVersion}
+                disabled={createVersion.isPending}
+                className="bg-[#d4c273] hover:bg-[#d4c273]/90 text-[#fefefe]"
+              >
+                {createVersion.isPending ? "Creating..." : "Create Draft Version"}
               </Button>
             </DialogFooter>
           </DialogContent>

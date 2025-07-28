@@ -7,6 +7,7 @@ import Footer from "@/components/footer"
 import { Toaster } from "@/components/toaster"
 // Import the ScrollToTop component
 import { ScrollToTop } from "@/components/scroll-to-top"
+import { QueryProvider } from "@/components/providers/query-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -26,15 +27,17 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         {/* Add the ScrollToTop component inside the ThemeProvider */}
-        <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          <div className="flex min-h-screen flex-col">
-            <ScrollToTop />
-            <Header />
-            {children}
-            <Footer />
-            <Toaster />
-          </div>
-        </ThemeProvider>
+        <QueryProvider>
+          <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+            <div className="flex min-h-screen flex-col">
+              <ScrollToTop />
+              <Header />
+              {children}
+              <Footer />
+              <Toaster />
+            </div>
+          </ThemeProvider>
+        </QueryProvider>
       </body>
     </html>
   )

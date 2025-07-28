@@ -1,18 +1,24 @@
+"use client"
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Package, Wrench, Palette, DollarSign, ToggleLeft, GitBranch, Route } from "lucide-react"
+import { Package, Wrench, Palette, DollarSign, ToggleLeft, GitBranch, Route, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import { useDashboardData } from "@/lib/api/dashboard"
 
 export default function HomePage() {
-  const sections = [
+  // API Hooks
+  const { data: dashboardData, isLoading, error } = useDashboardData()
+
+  const sectionConfigs = [
     {
       title: "Materials",
       description: "Manage materials, costs, markups, and process compatibility",
       icon: Package,
       href: "/materials",
-      count: "24 materials",
-      status: "Active",
       color: "bg-green-100 text-green-600",
     },
     {
@@ -20,8 +26,6 @@ export default function HomePage() {
       description: "Configure setup times, hourly rates, and complexity multipliers",
       icon: Wrench,
       href: "/processes",
-      count: "8 processes",
-      status: "Updated",
       color: "bg-blue-100 text-blue-600",
     },
     {
@@ -29,8 +33,6 @@ export default function HomePage() {
       description: "Build multi-step fabrication workflows and process sequences",
       icon: Route,
       href: "/routings",
-      count: "3 routings",
-      status: "Active",
       color: "bg-indigo-100 text-indigo-600",
     },
     {
@@ -38,8 +40,6 @@ export default function HomePage() {
       description: "Add and edit finish types with costs and lead times",
       icon: Palette,
       href: "/finishes",
-      count: "12 finishes",
-      status: "Active",
       color: "bg-purple-100 text-purple-600",
     },
     {
@@ -47,8 +47,6 @@ export default function HomePage() {
       description: "Set global markups and pricing strategy parameters",
       icon: DollarSign,
       href: "/margins",
-      count: "3 tiers",
-      status: "Configured",
       color: "bg-emerald-100 text-emerald-600",
     },
     {
@@ -56,8 +54,6 @@ export default function HomePage() {
       description: "Control quoting modules and experimental features",
       icon: ToggleLeft,
       href: "/features",
-      count: "6 features",
-      status: "Monitoring",
       color: "bg-orange-100 text-orange-600",
     },
     {
@@ -65,35 +61,94 @@ export default function HomePage() {
       description: "Manage draft and published pricing configurations",
       icon: GitBranch,
       href: "/versions",
-      count: "v2.1 active",
-      status: "Published",
       color: "bg-slate-100 text-slate-600",
     },
   ]
 
-  const stats = [
+  // Merge section configs with API data
+  const sections = sectionConfigs.map(config => {
+    const sectionData = dashboardData?.sections.find(s => s.title === config.title)
+    return {
+      ...config,
+      count: sectionData?.count || "Loading...",
+      status: sectionData?.status || "Unknown",
+    }
+  })
+
+  const stats = dashboardData ? [
     {
       title: "Active Materials",
-      value: "24",
-      change: "+3 this month",
+      value: dashboardData.stats.materials.total.toString(),
+      change: dashboardData.stats.materials.recent > 0 
+        ? `+${dashboardData.stats.materials.recent} this month` 
+        : dashboardData.stats.materials.lastUpdate,
       icon: Package,
       color: "text-green-600",
     },
     {
       title: "Manufacturing Processes",
-      value: "8",
-      change: "2 updated recently",
+      value: dashboardData.stats.processes.total.toString(),
+      change: dashboardData.stats.processes.recent > 0
+        ? `${dashboardData.stats.processes.recent} updated recently`
+        : dashboardData.stats.processes.lastUpdate,
       icon: Wrench,
       color: "text-blue-600",
     },
     {
       title: "Current Version",
-      value: "v2.1",
-      change: "Published 5 days ago",
+      value: dashboardData.stats.versions.current,
+      change: dashboardData.stats.versions.publishedAt 
+        ? `Published ${new Date(dashboardData.stats.versions.publishedAt).toLocaleDateString()}`
+        : "No published version",
       icon: GitBranch,
       color: "text-purple-600",
     },
-  ]
+  ] : []
+
+  // Loading State
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
+        <div className="max-w-7xl mx-auto p-8">
+          <div className="mb-8">
+            <div className="flex items-center gap-4 mb-4">
+              <Skeleton className="h-10 w-10" />
+              <div className="space-y-1">
+                <Skeleton className="h-10 w-96" />
+                <Skeleton className="h-6 w-[600px]" />
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {[...Array(3)].map((_, i) => (
+              <Skeleton key={i} className="h-32" />
+            ))}
+          </div>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {[...Array(7)].map((_, i) => (
+              <Skeleton key={i} className="h-48" />
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Error State
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
+        <div className="max-w-7xl mx-auto p-8">
+          <Alert className="bg-red-50 border-red-200">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-red-700">
+              Failed to load dashboard data: {error.message}
+            </AlertDescription>
+          </Alert>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
@@ -120,7 +175,7 @@ export default function HomePage() {
                   <div>
                     <p className="text-sm font-medium text-slate-600 mb-1">{stat.title}</p>
                     <p className="text-2xl font-bold text-slate-900">{stat.value}</p>
-                    <p className={`text-sm font-medium ${stat.color}`}>{stat.change} from last month</p>
+                    <p className={`text-sm font-medium ${stat.color}`}>{stat.change}</p>
                   </div>
                   <div
                     className={`w-12 h-12 rounded-xl flex items-center justify-center ${

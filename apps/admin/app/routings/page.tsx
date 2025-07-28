@@ -39,38 +39,21 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Textarea } from "@/components/ui/textarea"
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 import { Separator } from "@/components/ui/separator"
+import {
+  useRoutings,
+  useCreateRouting,
+  useUpdateRouting,
+  useDeleteRouting,
+  useToggleRoutingActive,
+  useSetPrimaryRoute,
+  useDuplicateRouting,
+  calculateRoutingCost,
+  type Routing as APIRouting,
+  type RoutingStep as APIRoutingStep
+} from "@/lib/api/routings"
 
-interface RoutingStep {
-  id: string
-  processId: string
-  processName: string
-  sequence: number
-  setupTimeMultiplier: number
-  runtimeMultiplier: number
-  notes?: string
-  // Pricing data from process
-  setupTime: number // minutes
-  hourlyRate: number // $/hour
-  minimumCost: number // $
-  complexityMultiplier: number
-}
-
-interface Routing {
-  id: string
-  name: string
-  description: string
-  category: string
-  steps: RoutingStep[]
-  totalSetupTime: number
-  estimatedLeadTime: number
-  active: boolean
-  createdAt: string
-  updatedAt: string
-  // Pricing configuration
-  materialMarkup: number // %
-  finishingCost: number // $ per sq in
-  isPrimaryPricingRoute: boolean
-}
+type RoutingStep = APIRoutingStep
+type Routing = APIRouting
 
 const mockProcesses = [
   // Primary Operations
@@ -483,7 +466,13 @@ const mockRoutings: Routing[] = [
 ]
 
 export default function RoutingsPage() {
-  const [routings, setRoutings] = useState<Routing[]>(mockRoutings)
+  const { data: routings = [], isLoading, error } = useRoutings()
+  const createRouting = useCreateRouting()
+  const updateRouting = useUpdateRouting()
+  const deleteRouting = useDeleteRouting()
+  const toggleActive = useToggleRoutingActive()
+  const setPrimary = useSetPrimaryRoute()
+  const duplicateRouting = useDuplicateRouting()
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingRouting, setEditingRouting] = useState<Routing | null>(null)
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "name", direction: "asc" })
@@ -503,12 +492,12 @@ export default function RoutingsPage() {
     }))
   }
 
-  const toggleRouting = (id: string) => {
-    setRoutings(routings.map((r) => (r.id === id ? { ...r, active: !r.active } : r)))
+  const toggleRouting = (id: string, active: boolean) => {
+    toggleActive.mutate({ id, active })
   }
 
   const setPrimaryRoute = (id: string) => {
-    setRoutings(routings.map((r) => ({ ...r, isPrimaryPricingRoute: r.id === id })))
+    setPrimary.mutate({ id })
   }
 
   const handleEdit = (routing: Routing) => {
@@ -522,42 +511,10 @@ export default function RoutingsPage() {
   }
 
   const handleDuplicate = (routing: Routing) => {
-    const duplicatedRouting: Routing = {
-      ...routing,
-      id: Date.now().toString(),
-      name: `${routing.name} (Copy)`,
-      createdAt: new Date().toISOString().split("T")[0],
-      updatedAt: new Date().toISOString().split("T")[0],
-      isPrimaryPricingRoute: false,
-    }
-    setRoutings([...routings, duplicatedRouting])
+    duplicateRouting.mutate(routing.id)
   }
 
-  const calculateRoutingCost = (routing: Routing, quantity = 1, materialCost = 100) => {
-    let totalSetupCost = 0
-    let totalRuntimeCost = 0
-    let totalMinimumCost = 0
-
-    routing.steps.forEach((step) => {
-      const setupCost = ((step.setupTime * step.setupTimeMultiplier) / 60) * step.hourlyRate
-      const runtimeCost = ((30 * step.runtimeMultiplier) / 60) * step.hourlyRate * step.complexityMultiplier // Assuming 30 min runtime
-
-      totalSetupCost += setupCost
-      totalRuntimeCost += runtimeCost * quantity
-      totalMinimumCost = Math.max(totalMinimumCost, step.minimumCost)
-    })
-
-    const processingCost = Math.max(totalSetupCost + totalRuntimeCost, totalMinimumCost)
-    const materialCostWithMarkup = materialCost * (1 + routing.materialMarkup / 100)
-    const finishingCost = routing.finishingCost * 100 // Assuming 100 sq in surface area
-
-    return {
-      processingCost,
-      materialCost: materialCostWithMarkup,
-      finishingCost,
-      totalCost: processingCost + materialCostWithMarkup + finishingCost,
-    }
-  }
+  // Use calculateRoutingCost from API utilities
 
   const filteredRoutings = routings.filter(
     (routing) =>
@@ -616,7 +573,11 @@ export default function RoutingsPage() {
         </TableCell>
         <TableCell>
           <div className="flex items-center space-x-3">
-            <Switch checked={routing.active} onCheckedChange={() => toggleRouting(routing.id)} />
+            <Switch 
+              checked={routing.active} 
+              onCheckedChange={(checked) => toggleRouting(routing.id, checked)}
+              disabled={toggleActive.isPending}
+            />
             <Badge
               variant={routing.active ? "default" : "secondary"}
               className={
@@ -733,7 +694,7 @@ export default function RoutingsPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-slate-600">Total Routings</p>
-                  <p className="text-xl font-bold text-slate-900">{routings.length}</p>
+                  <p className="text-xl font-bold text-slate-900">{isLoading ? '...' : routings.length}</p>
                 </div>
               </div>
             </div>
@@ -744,7 +705,7 @@ export default function RoutingsPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-slate-600">Active Routings</p>
-                  <p className="text-xl font-bold text-slate-900">{routings.filter((r) => r.active).length}</p>
+                  <p className="text-xl font-bold text-slate-900">{isLoading ? '...' : routings.filter((r) => r.active).length}</p>
                 </div>
               </div>
             </div>
@@ -756,7 +717,7 @@ export default function RoutingsPage() {
                 <div>
                   <p className="text-sm font-medium text-slate-600">Complexity</p>
                   <p className="text-xl font-bold text-slate-900">
-                    {(routings.reduce((sum, r) => sum + r.steps.length, 0) / routings.length).toFixed(1)} avg steps
+                    {isLoading || routings.length === 0 ? '...' : (routings.reduce((sum, r) => sum + r.steps.length, 0) / routings.length).toFixed(1)} avg steps
                   </p>
                 </div>
               </div>
@@ -821,6 +782,12 @@ export default function RoutingsPage() {
             </div>
           </CardHeader>
           <CardContent className="p-6">
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                <p className="text-red-600 text-sm">Error loading routings: {error.message}</p>
+              </div>
+            )}
+            
             <TableControls
               groupOptions={groupOptions}
               currentGroup={groupBy}
@@ -828,7 +795,11 @@ export default function RoutingsPage() {
               onClearGroup={() => setGroupBy("")}
             />
 
-            {groupBy ? (
+            {isLoading ? (
+              <div className="flex justify-center py-8">
+                <div className="text-slate-600">Loading routings...</div>
+              </div>
+            ) : groupBy ? (
               <div>
                 {Object.entries(groupedRoutings).map(([groupValue, groupRoutings]) => (
                   <GroupedTableSection
@@ -852,20 +823,36 @@ export default function RoutingsPage() {
           onClose={() => setIsDialogOpen(false)}
           routing={editingRouting}
           processes={mockProcesses}
-          onSave={(routingData) => {
-            if (editingRouting) {
-              setRoutings(routings.map((r) => (r.id === editingRouting.id ? { ...r, ...routingData } : r)))
-            } else {
-              const newRouting: Routing = {
-                id: Date.now().toString(),
-                ...routingData,
-                createdAt: new Date().toISOString().split("T")[0],
-                updatedAt: new Date().toISOString().split("T")[0],
-                isPrimaryPricingRoute: false,
+          isLoading={createRouting.isPending || updateRouting.isPending}
+          onSave={async (routingData) => {
+            try {
+              if (editingRouting) {
+                await updateRouting.mutateAsync({ 
+                  id: editingRouting.id, 
+                  data: routingData 
+                })
+              } else {
+                await createRouting.mutateAsync({
+                  name: routingData.name,
+                  description: routingData.description,
+                  category: routingData.category,
+                  steps: routingData.steps.map(step => ({
+                    processId: step.processId,
+                    sequence: step.sequence,
+                    setupTimeMultiplier: step.setupTimeMultiplier,
+                    runtimeMultiplier: step.runtimeMultiplier,
+                    notes: step.notes
+                  })),
+                  estimatedLeadTime: routingData.estimatedLeadTime,
+                  materialMarkup: routingData.materialMarkup,
+                  finishingCost: routingData.finishingCost,
+                  active: routingData.active ?? true
+                })
               }
-              setRoutings([...routings, newRouting])
+              setIsDialogOpen(false)
+            } catch (error) {
+              console.error('Error saving routing:', error)
             }
-            setIsDialogOpen(false)
           }}
         />
       </div>
@@ -886,10 +873,11 @@ interface RoutingDialogProps {
     minimumCost: number
     complexityMultiplier: number
   }>
+  isLoading?: boolean
   onSave: (routing: Partial<Routing>) => void
 }
 
-function RoutingDialog({ isOpen, onClose, routing, processes, onSave }: RoutingDialogProps) {
+function RoutingDialog({ isOpen, onClose, routing, processes, isLoading = false, onSave }: RoutingDialogProps) {
   const [formData, setFormData] = useState({
     name: "",
     description: "",
@@ -1396,8 +1384,15 @@ function RoutingDialog({ isOpen, onClose, routing, processes, onSave }: RoutingD
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700">
-            {routing ? "Save Changes" : "Create Routing"}
+          <Button 
+            onClick={handleSave} 
+            className="bg-blue-600 hover:bg-blue-700"
+            disabled={isLoading}
+          >
+            {isLoading
+              ? 'Saving...' 
+              : routing ? "Save Changes" : "Create Routing"
+            }
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,0 +1,162 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@formx/database'
+import { requireAuth, AuthError } from '@formx/auth'
+import { z } from 'zod'
+
+// Validation schema for creating/updating finishes
+const FinishSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  type: z.string().min(1, 'Type is required'),
+  costPerSqIn: z.number().min(0, 'Cost must be non-negative'),
+  leadTimeDays: z.number().int().min(0, 'Lead time must be non-negative'),
+  description: z.string().optional(),
+  active: z.boolean().optional().default(true)
+})
+
+// GET /api/v2/finishes - List all finishes
+export async function GET(request: NextRequest) {
+  try {
+    // Require authentication
+    const user = await requireAuth(['manage:finishes', 'read:finishes'])(request)
+
+    // Get query parameters
+    const { searchParams } = new URL(request.url)
+    const active = searchParams.get('active')
+    const type = searchParams.get('type')
+
+    // Build where clause
+    const where: any = {}
+    if (active !== null) {
+      where.active = active === 'true'
+    }
+    if (type) {
+      where.type = type
+    }
+
+    // Fetch finishes from database
+    const finishes = await prisma.finish.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        costPerSqIn: true,
+        leadTimeDays: true,
+        description: true,
+        active: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    })
+
+    return NextResponse.json(finishes)
+
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        {
+          code: error.code,
+          message: error.message
+        },
+        { status: error.statusCode }
+      )
+    }
+
+    console.error('GET /api/v2/finishes error:', error)
+    return NextResponse.json(
+      {
+        code: 'INTERNAL_ERROR',
+        message: 'An internal error occurred'
+      },
+      { status: 500 }
+    )
+  }
+}
+
+// POST /api/v2/finishes - Create a new finish
+export async function POST(request: NextRequest) {
+  try {
+    // Require authentication with create permissions
+    const user = await requireAuth(['manage:finishes'])(request)
+
+    const body = await request.json()
+    
+    // Validate request body
+    const validation = FinishSchema.safeParse(body)
+    if (!validation.success) {
+      return NextResponse.json(
+        {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid request data',
+          details: validation.error.errors
+        },
+        { status: 400 }
+      )
+    }
+
+    const { name, type, costPerSqIn, leadTimeDays, description, active } = validation.data
+
+    // Create finish in database
+    const finish = await prisma.finish.create({
+      data: {
+        name,
+        type,
+        costPerSqIn,
+        leadTimeDays,
+        description,
+        active,
+        createdBy: user.id,
+        version: 1
+      },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        costPerSqIn: true,
+        leadTimeDays: true,
+        description: true,
+        active: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    })
+
+    // Log audit trail
+    await prisma.auditLog.create({
+      data: {
+        action: 'create',
+        entityType: 'Finish',
+        entityId: finish.id,
+        userId: user.id,
+        changes: finish,
+        metadata: {
+          userAgent: request.headers.get('user-agent'),
+          ip: request.headers.get('x-forwarded-for') || 'unknown'
+        }
+      }
+    })
+
+    return NextResponse.json(finish, { status: 201 })
+
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        {
+          code: error.code,
+          message: error.message
+        },
+        { status: error.statusCode }
+      )
+    }
+
+    console.error('POST /api/v2/finishes error:', error)
+    return NextResponse.json(
+      {
+        code: 'INTERNAL_ERROR',
+        message: 'An internal error occurred'
+      },
+      { status: 500 }
+    )
+  }
+}

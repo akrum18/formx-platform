@@ -1,0 +1,261 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@formx/database'
+import { requireAuth, AuthError } from '@formx/auth'
+import { z } from 'zod'
+
+// Validation schema for updating finishes
+const UpdateFinishSchema = z.object({
+  name: z.string().min(1, 'Name is required').optional(),
+  type: z.string().min(1, 'Type is required').optional(),
+  costPerSqIn: z.number().min(0, 'Cost must be non-negative').optional(),
+  leadTimeDays: z.number().int().min(0, 'Lead time must be non-negative').optional(),
+  description: z.string().optional(),
+  active: z.boolean().optional()
+})
+
+// GET /api/v2/finishes/[id] - Get a specific finish
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    // Require authentication
+    const user = await requireAuth(['manage:finishes', 'read:finishes'])(request)
+
+    const { id } = params
+
+    // Fetch finish from database
+    const finish = await prisma.finish.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        costPerSqIn: true,
+        leadTimeDays: true,
+        description: true,
+        active: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    })
+
+    if (!finish) {
+      return NextResponse.json(
+        {
+          code: 'NOT_FOUND',
+          message: 'Finish not found'
+        },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json(finish)
+
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        {
+          code: error.code,
+          message: error.message
+        },
+        { status: error.statusCode }
+      )
+    }
+
+    console.error('GET /api/v2/finishes/[id] error:', error)
+    return NextResponse.json(
+      {
+        code: 'INTERNAL_ERROR',
+        message: 'An internal error occurred'
+      },
+      { status: 500 }
+    )
+  }
+}
+
+// PUT /api/v2/finishes/[id] - Update a specific finish
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    // Require authentication with manage permissions
+    const user = await requireAuth(['manage:finishes'])(request)
+
+    const { id } = params
+    const body = await request.json()
+    
+    // Validate request body
+    const validation = UpdateFinishSchema.safeParse(body)
+    if (!validation.success) {
+      return NextResponse.json(
+        {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid request data',
+          details: validation.error.errors
+        },
+        { status: 400 }
+      )
+    }
+
+    // Check if finish exists
+    const existingFinish = await prisma.finish.findUnique({
+      where: { id }
+    })
+
+    if (!existingFinish) {
+      return NextResponse.json(
+        {
+          code: 'NOT_FOUND',
+          message: 'Finish not found'
+        },
+        { status: 404 }
+      )
+    }
+
+    const updateData = validation.data
+
+    // Update finish in database
+    const updatedFinish = await prisma.finish.update({
+      where: { id },
+      data: {
+        ...updateData,
+        version: {
+          increment: 1
+        }
+      },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        costPerSqIn: true,
+        leadTimeDays: true,
+        description: true,
+        active: true,
+        createdAt: true,
+        updatedAt: true
+      }
+    })
+
+    // Log audit trail
+    await prisma.auditLog.create({
+      data: {
+        action: 'update',
+        entityType: 'Finish',
+        entityId: id,
+        userId: user.id,
+        changes: {
+          before: existingFinish,
+          after: updatedFinish,
+          modified: updateData
+        },
+        metadata: {
+          userAgent: request.headers.get('user-agent'),
+          ip: request.headers.get('x-forwarded-for') || 'unknown'
+        }
+      }
+    })
+
+    return NextResponse.json(updatedFinish)
+
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        {
+          code: error.code,
+          message: error.message
+        },
+        { status: error.statusCode }
+      )
+    }
+
+    console.error('PUT /api/v2/finishes/[id] error:', error)
+    return NextResponse.json(
+      {
+        code: 'INTERNAL_ERROR',
+        message: 'An internal error occurred'
+      },
+      { status: 500 }
+    )
+  }
+}
+
+// DELETE /api/v2/finishes/[id] - Delete a specific finish
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    // Require authentication with manage permissions
+    const user = await requireAuth(['manage:finishes'])(request)
+
+    const { id } = params
+
+    // Check if finish exists
+    const existingFinish = await prisma.finish.findUnique({
+      where: { id }
+    })
+
+    if (!existingFinish) {
+      return NextResponse.json(
+        {
+          code: 'NOT_FOUND',
+          message: 'Finish not found'
+        },
+        { status: 404 }
+      )
+    }
+
+    // Soft delete by setting active to false
+    const deletedFinish = await prisma.finish.update({
+      where: { id },
+      data: {
+        active: false,
+        version: {
+          increment: 1
+        }
+      }
+    })
+
+    // Log audit trail
+    await prisma.auditLog.create({
+      data: {
+        action: 'delete',
+        entityType: 'Finish',
+        entityId: id,
+        userId: user.id,
+        changes: {
+          before: existingFinish,
+          after: deletedFinish
+        },
+        metadata: {
+          userAgent: request.headers.get('user-agent'),
+          ip: request.headers.get('x-forwarded-for') || 'unknown'
+        }
+      }
+    })
+
+    return NextResponse.json({ message: 'Finish deleted successfully' })
+
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        {
+          code: error.code,
+          message: error.message
+        },
+        { status: error.statusCode }
+      )
+    }
+
+    console.error('DELETE /api/v2/finishes/[id] error:', error)
+    return NextResponse.json(
+      {
+        code: 'INTERNAL_ERROR',
+        message: 'An internal error occurred'
+      },
+      { status: 500 }
+    )
+  }
+}

@@ -26,58 +26,20 @@ import { getTableColumnClasses } from "@/lib/table-utils"
 import { CSVImportDialog } from "@/components/csv-import-dialog"
 import { CSVExportDialog } from "@/components/csv-export-dialog"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import { useFinishes, useCreateFinish, useUpdateFinish, useDeleteFinish, useToggleFinishActive, type Finish } from "@/lib/api/finishes"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
-interface Finish {
-  id: string
-  name: string
-  type: string
-  costPerSqIn: number
-  leadTimeDays: number
-  description: string
-  active: boolean
-}
-
-const mockFinishes: Finish[] = [
-  {
-    id: "1",
-    name: "Anodized Clear",
-    type: "Anodizing",
-    costPerSqIn: 0.15,
-    leadTimeDays: 3,
-    description: "Clear anodized finish for aluminum parts",
-    active: true,
-  },
-  {
-    id: "2",
-    name: "Black Oxide",
-    type: "Chemical",
-    costPerSqIn: 0.08,
-    leadTimeDays: 2,
-    description: "Black oxide coating for steel parts",
-    active: true,
-  },
-  {
-    id: "3",
-    name: "Powder Coat Black",
-    type: "Powder Coating",
-    costPerSqIn: 0.25,
-    leadTimeDays: 5,
-    description: "Durable powder coat finish",
-    active: true,
-  },
-  {
-    id: "4",
-    name: "Zinc Plating",
-    type: "Plating",
-    costPerSqIn: 0.12,
-    leadTimeDays: 4,
-    description: "Corrosion resistant zinc plating",
-    active: false,
-  },
-]
 
 export default function FinishesPage() {
-  const [finishes, setFinishes] = useState<Finish[]>(mockFinishes)
+  // API hooks
+  const { data: finishes = [], isLoading, error } = useFinishes()
+  const createFinish = useCreateFinish()
+  const updateFinish = useUpdateFinish()
+  const deleteFinish = useDeleteFinish()
+  const toggleFinishActive = useToggleFinishActive()
+
+  // UI state
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingFinish, setEditingFinish] = useState<Finish | null>(null)
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "name", direction: "asc" })
@@ -85,6 +47,16 @@ export default function FinishesPage() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  
+  // Form state
+  const [formData, setFormData] = useState({
+    name: "",
+    type: "",
+    costPerSqIn: 0,
+    leadTimeDays: 0,
+    description: "",
+    active: true
+  })
 
   const groupOptions = [
     { value: "active", label: "Status" },
@@ -113,17 +85,58 @@ export default function FinishesPage() {
   }
 
   const toggleFinish = (id: string) => {
-    setFinishes(finishes.map((f) => (f.id === id ? { ...f, active: !f.active } : f)))
+    const finish = finishes.find((f) => f.id === id)
+    if (finish) {
+      toggleFinishActive.mutate({ id, active: !finish.active })
+    }
   }
 
   const handleEdit = (finish: Finish) => {
     setEditingFinish(finish)
+    setFormData({
+      name: finish.name,
+      type: finish.type,
+      costPerSqIn: finish.costPerSqIn,
+      leadTimeDays: finish.leadTimeDays,
+      description: finish.description || "",
+      active: finish.active
+    })
     setIsDialogOpen(true)
   }
 
   const handleAdd = () => {
     setEditingFinish(null)
+    setFormData({
+      name: "",
+      type: "",
+      costPerSqIn: 0,
+      leadTimeDays: 0,
+      description: "",
+      active: true
+    })
     setIsDialogOpen(true)
+  }
+
+  const handleSave = async () => {
+    if (!formData.name || !formData.type) {
+      return // Basic validation
+    }
+
+    try {
+      if (editingFinish) {
+        // Update existing finish
+        await updateFinish.mutateAsync({
+          id: editingFinish.id,
+          data: formData
+        })
+      } else {
+        // Create new finish
+        await createFinish.mutateAsync(formData)
+      }
+      setIsDialogOpen(false)
+    } catch (error) {
+      console.error('Failed to save finish:', error)
+    }
   }
 
   const filteredFinishes = finishes.filter(
@@ -168,7 +181,12 @@ export default function FinishesPage() {
           >
             <Edit className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="sm" className="hover:bg-red-50 hover:text-red-600">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="hover:bg-red-50 hover:text-red-600"
+            onClick={() => deleteFinish.mutate(finish.id)}
+          >
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
@@ -232,19 +250,57 @@ export default function FinishesPage() {
     )
   }
 
-  const handleImport = (importedData: any[]) => {
-    const newFinishes = importedData.map((item, index) => ({
-      id: (Date.now() + index).toString(),
-      name: item.name || "",
-      type: item.type || "Chemical",
-      costPerSqIn: Number(item.costPerSqIn) || 0,
-      leadTimeDays: Number(item.leadTimeDays) || 0,
-      description: item.description || "",
-      active: item.active !== undefined ? item.active : true,
-    }))
+  const handleImport = async (importedData: any[]) => {
+    try {
+      // Import finishes one by one using the create mutation
+      for (const finishData of importedData) {
+        await createFinish.mutateAsync({
+          name: finishData.name,
+          type: finishData.type,
+          costPerSqIn: parseFloat(finishData.costPerSqIn) || 0,
+          leadTimeDays: parseInt(finishData.leadTimeDays) || 0,
+          description: finishData.description || "",
+          active: finishData.active !== undefined ? finishData.active : true
+        })
+      }
+      console.log(`Successfully imported ${importedData.length} finishes`)
+    } catch (error) {
+      console.error('Failed to import finishes:', error)
+    }
+  }
 
-    setFinishes([...finishes, ...newFinishes])
-    console.log(`Imported ${newFinishes.length} finishes`)
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
+        <div className="max-w-7xl mx-auto p-8">
+          <div className="mb-8">
+            <Skeleton className="h-10 w-64 mb-4" />
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <Skeleton key={i} className="h-20" />
+              ))}
+            </div>
+          </div>
+          <Skeleton className="h-96" />
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
+        <div className="max-w-7xl mx-auto p-8">
+          <Alert className="bg-red-50 border-red-200">
+            <AlertDescription className="text-red-700">
+              Failed to load finishes: {error.message}
+            </AlertDescription>
+          </Alert>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -425,7 +481,8 @@ export default function FinishesPage() {
                 </Label>
                 <Input
                   id="name"
-                  defaultValue={editingFinish?.name}
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                   className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>
@@ -433,7 +490,10 @@ export default function FinishesPage() {
                 <Label htmlFor="type" className="text-sm font-medium text-slate-700">
                   Type
                 </Label>
-                <Select defaultValue={editingFinish?.type}>
+                <Select 
+                  value={formData.type} 
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, type: value }))}
+                >
                   <SelectTrigger className="border-slate-300 focus:border-blue-500 focus:ring-blue-500">
                     <SelectValue placeholder="Select finish type" />
                   </SelectTrigger>
@@ -455,7 +515,8 @@ export default function FinishesPage() {
                     id="cost"
                     type="number"
                     step="0.001"
-                    defaultValue={editingFinish?.costPerSqIn}
+                    value={formData.costPerSqIn}
+                    onChange={(e) => setFormData(prev => ({ ...prev, costPerSqIn: parseFloat(e.target.value) || 0 }))}
                     className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
                   />
                 </div>
@@ -466,7 +527,8 @@ export default function FinishesPage() {
                   <Input
                     id="leadTime"
                     type="number"
-                    defaultValue={editingFinish?.leadTimeDays}
+                    value={formData.leadTimeDays}
+                    onChange={(e) => setFormData(prev => ({ ...prev, leadTimeDays: parseInt(e.target.value) || 0 }))}
                     className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
                   />
                 </div>
@@ -477,7 +539,8 @@ export default function FinishesPage() {
                 </Label>
                 <Input
                   id="description"
-                  defaultValue={editingFinish?.description}
+                  value={formData.description}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   className="border-slate-300 focus:border-blue-500 focus:ring-blue-500"
                 />
               </div>
@@ -486,8 +549,12 @@ export default function FinishesPage() {
               <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="bg-blue-600 hover:bg-blue-700">
-                Save Finish
+              <Button 
+                onClick={handleSave}
+                disabled={createFinish.isPending || updateFinish.isPending}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {createFinish.isPending || updateFinish.isPending ? "Saving..." : "Save Finish"}
               </Button>
             </DialogFooter>
           </DialogContent>
