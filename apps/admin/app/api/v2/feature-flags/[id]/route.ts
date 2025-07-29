@@ -74,12 +74,13 @@ let mockFeatureFlags = [
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     await new Promise(resolve => setTimeout(resolve, 150))
     
-    const flag = mockFeatureFlags.find(f => f.id === params.id)
+    const flag = mockFeatureFlags.find(f => f.id === id)
     
     if (!flag) {
       return NextResponse.json(
@@ -90,7 +91,7 @@ export async function GET(
     
     return NextResponse.json(flag)
   } catch (error) {
-    console.error(`GET /api/v2/feature-flags/${params.id} error:`, error)
+    console.error(`GET /api/v2/feature-flags/[id] error:`, error)
     return NextResponse.json(
       { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
@@ -100,9 +101,10 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     await new Promise(resolve => setTimeout(resolve, 250))
     
     const body = await request.json()
@@ -119,7 +121,7 @@ export async function PUT(
       )
     }
     
-    const flagIndex = mockFeatureFlags.findIndex(f => f.id === params.id)
+    const flagIndex = mockFeatureFlags.findIndex(f => f.id === id)
     
     if (flagIndex === -1) {
       return NextResponse.json(
@@ -139,7 +141,7 @@ export async function PUT(
     
     return NextResponse.json(updatedFlag)
   } catch (error) {
-    console.error(`PUT /api/v2/feature-flags/${params.id} error:`, error)
+    console.error(`PUT /api/v2/feature-flags/[id] error:`, error)
     return NextResponse.json(
       { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
@@ -149,12 +151,13 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     await new Promise(resolve => setTimeout(resolve, 200))
     
-    const flagIndex = mockFeatureFlags.findIndex(f => f.id === params.id)
+    const flagIndex = mockFeatureFlags.findIndex(f => f.id === id)
     
     if (flagIndex === -1) {
       return NextResponse.json(
@@ -169,7 +172,7 @@ export async function DELETE(
     
     return NextResponse.json({ message: 'Feature flag deleted successfully' })
   } catch (error) {
-    console.error(`DELETE /api/v2/feature-flags/${params.id} error:`, error)
+    console.error(`DELETE /api/v2/feature-flags/[id] error:`, error)
     return NextResponse.json(
       { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }

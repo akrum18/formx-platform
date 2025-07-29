@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { prisma } from '../../../../../lib/prisma'
 
-// Validation schema for updating materials
 const UpdateMaterialSchema = z.object({
   name: z.string().min(1, 'Name is required').optional(),
   cost: z.number().min(0, 'Cost must be non-negative').optional(),
@@ -12,57 +12,59 @@ const UpdateMaterialSchema = z.object({
   active: z.boolean().optional()
 })
 
-// GET /api/v2/materials/[id] - Get a specific material (DEMO VERSION)
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 150))
+    const { id } = await params
+    
+    const material = await prisma.material.findUnique({
+      where: { id },
+      include: {
+        processes: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    })
 
-    const { id } = params
-
-    // Mock material lookup
-    const mockMaterial = {
-      id,
-      name: `Material ${id}`,
-      cost: 5.0,
-      markup: 30,
-      density: 3.5,
-      unit: "lb",
-      processes: ["CNC Milling", "CNC Turning"],
-      processIds: ["proc-1", "proc-2"],
-      active: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+    if (!material) {
+      return NextResponse.json(
+        { code: 'NOT_FOUND', message: 'Material not found' },
+        { status: 404 }
+      )
     }
 
-    return NextResponse.json(mockMaterial)
+    // Transform to match expected format
+    const response = {
+      ...material,
+      processes: material.processes.map(p => p.name),
+      processIds: material.processes.map(p => p.id),
+      createdAt: material.createdAt.toISOString(),
+      updatedAt: material.updatedAt.toISOString()
+    }
 
+    return NextResponse.json(response)
   } catch (error) {
     console.error('GET /api/v2/materials/[id] error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }
 }
 
-// PUT /api/v2/materials/[id] - Update a specific material (DEMO VERSION)
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 250))
-
-    const { id } = params
+    const { id } = await params
     const body = await request.json()
     
-    // Validate request body
     const validation = UpdateMaterialSchema.safeParse(body)
     if (!validation.success) {
       return NextResponse.json(
@@ -75,60 +77,81 @@ export async function PUT(
       )
     }
 
-    const updateData = validation.data
+    const { processIds, ...updateData } = validation.data
 
-    // Create mock updated material
-    const updatedMaterial = {
-      id,
-      name: updateData.name || `Material ${id}`,
-      cost: updateData.cost || 5.0,
-      markup: updateData.markup || 30,
-      density: updateData.density || 3.5,
-      unit: updateData.unit || "lb",
-      processes: updateData.processIds?.map(pid => `Process ${pid}`) || ["CNC Milling"],
-      processIds: updateData.processIds || ["proc-1"],
-      active: updateData.active ?? true,
-      createdAt: new Date(Date.now() - 24*60*60*1000).toISOString(),
-      updatedAt: new Date().toISOString()
+    // Start with the basic update
+    let updatePayload: any = { ...updateData }
+    
+    // Handle process relationships if provided
+    if (processIds !== undefined) {
+      // First disconnect all existing processes, then connect new ones
+      updatePayload.processes = {
+        set: processIds.map(id => ({ id }))
+      }
     }
 
-    console.log('✏️ Updated material (DEMO):', updatedMaterial)
+    const updatedMaterial = await prisma.material.update({
+      where: { id },
+      data: updatePayload,
+      include: {
+        processes: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    })
 
-    return NextResponse.json(updatedMaterial)
+    // Transform to match expected format
+    const response = {
+      ...updatedMaterial,
+      processes: updatedMaterial.processes.map(p => p.name),
+      processIds: updatedMaterial.processes.map(p => p.id),
+      createdAt: updatedMaterial.createdAt.toISOString(),
+      updatedAt: updatedMaterial.updatedAt.toISOString()
+    }
 
-  } catch (error) {
+    return NextResponse.json(response)
+  } catch (error: any) {
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { code: 'NOT_FOUND', message: 'Material not found' },
+        { status: 404 }
+      )
+    }
+    
     console.error('PUT /api/v2/materials/[id] error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }
 }
 
-// DELETE /api/v2/materials/[id] - Delete a specific material (DEMO VERSION)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 200))
+    const { id } = await params
 
-    const { id } = params
-
-    console.log('🗑️ Deleted material (DEMO):', id)
+    await prisma.material.delete({
+      where: { id }
+    })
 
     return NextResponse.json({ message: 'Material deleted successfully' })
-
-  } catch (error) {
+  } catch (error: any) {
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { code: 'NOT_FOUND', message: 'Material not found' },
+        { status: 404 }
+      )
+    }
+    
     console.error('DELETE /api/v2/materials/[id] error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }

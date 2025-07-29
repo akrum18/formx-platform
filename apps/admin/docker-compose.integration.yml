@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  admin:
+    build: .
+    container_name: formx-admin-integration
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://formx_user:FormX2024!@db:5432/formx_integration
+      - JWT_SECRET=formx-integration-jwt-secret-2024-secure-random-key-32-chars
+      - JWT_EXPIRY=24h
+      - NEXT_PUBLIC_API_URL=http://localhost:3000
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+    depends_on:
+      - db
+    networks:
+      - formx-network
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    container_name: formx-postgres-integration
+    environment:
+      - POSTGRES_DB=formx_integration
+      - POSTGRES_USER=formx_user
+      - POSTGRES_PASSWORD=FormX2024!
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/setup-database.sql:/docker-entrypoint-initdb.d/setup.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - formx-network
+    restart: unless-stopped
+
+  # Optional: Database management interface
+  adminer:
+    image: adminer
+    container_name: formx-adminer-integration
+    ports:
+      - "8080:8080"
+    networks:
+      - formx-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  formx-network:
+    driver: bridge

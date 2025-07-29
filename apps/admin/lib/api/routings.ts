@@ -194,7 +194,7 @@ export function useCreateRouting() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: routingsAPI.createRouting,
+    mutationFn: (data: CreateRoutingData) => routingsAPI.createRouting(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: routingsKeys.lists() })
     },
@@ -218,7 +218,7 @@ export function useDeleteRouting() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: routingsAPI.deleteRouting,
+    mutationFn: (id: string) => routingsAPI.deleteRouting(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: routingsKeys.lists() })
     },
@@ -229,7 +229,7 @@ export function useDuplicateRouting() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: routingsAPI.duplicateRouting,
+    mutationFn: (id: string) => routingsAPI.duplicateRouting(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: routingsKeys.lists() })
     },

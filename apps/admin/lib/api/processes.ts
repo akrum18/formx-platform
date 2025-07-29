@@ -137,7 +137,7 @@ export function useCreateProcess() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: processesAPI.createProcess,
+    mutationFn: (data: CreateProcessData) => processesAPI.createProcess(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: processesKeys.lists() })
     },
@@ -161,7 +161,7 @@ export function useDeleteProcess() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: processesAPI.deleteProcess,
+    mutationFn: (id: string) => processesAPI.deleteProcess(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: processesKeys.lists() })
     },

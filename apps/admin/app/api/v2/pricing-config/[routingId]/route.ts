@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { prisma } from '../../../../../lib/prisma'
 
-// Validation schemas for updating specific routing pricing
 const TierOverrideSchema = z.object({
   multiplier: z.number().min(0.1).optional(),
   materialMarkupOverride: z.number().min(0).optional(),
@@ -21,118 +21,60 @@ const UpdateRoutingPricingSchema = z.object({
   }).optional()
 })
 
-// Mock pricing configuration data (should be shared, but for demo we'll recreate)
-let mockPricingConfig = {
-  routings: [
-    {
-      routingId: "1",
-      routingName: "Laser Cutting - Deburring - Press Brake Bending - TIG Welding",
-      category: "Sheet Metal",
-      baseCost: 185.5,
-      materialMarkup: 35,
-      finishingCost: 0.15,
-      leadTime: 5,
-      tierOverrides: {
-        rush: {
-          multiplier: 1.6,
-          leadTimeOverride: 3
-        }
-      }
-    },
-    {
-      routingId: "2",
-      routingName: "CNC Milling - Deburring - Anodizing",
-      category: "Machining",
-      baseCost: 245.75,
-      materialMarkup: 40,
-      finishingCost: 0.25,
-      leadTime: 7,
-      tierOverrides: {
-        economy: {
-          materialMarkupOverride: 35
-        },
-        rush: {
-          materialMarkupOverride: 45,
-          leadTimeOverride: 4
-        }
-      }
-    },
-    {
-      routingId: "4",
-      routingName: "CNC Milling",
-      category: "Machining",
-      baseCost: 135.0,
-      materialMarkup: 35,
-      finishingCost: 0,
-      leadTime: 3,
-      tierOverrides: {}
-    },
-    {
-      routingId: "5",
-      routingName: "Laser Cutting",
-      category: "Cutting",
-      baseCost: 45.25,
-      materialMarkup: 30,
-      finishingCost: 0,
-      leadTime: 2,
-      tierOverrides: {
-        economy: {
-          multiplier: 0.85
-        }
-      }
-    }
-  ]
-}
-
-// GET /api/v2/pricing-config/[routingId] - Get specific routing pricing (DEMO VERSION)
 export async function GET(
   request: NextRequest,
-  { params }: { params: { routingId: string } }
+  { params }: { params: Promise<{ routingId: string }> }
 ) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 150))
+    const { routingId } = await params
 
-    const { routingId } = params
+    // Get the published pricing configuration
+    const config = await prisma.pricingConfiguration.findFirst({
+      where: { status: 'published' },
+      include: {
+        routings: {
+          where: { routingId }
+        }
+      }
+    })
 
-    // Find routing in mock configuration
-    const routing = mockPricingConfig.routings.find(r => r.routingId === routingId)
-
-    if (!routing) {
+    if (!config || config.routings.length === 0) {
       return NextResponse.json(
-        {
-          code: 'NOT_FOUND',
-          message: 'Routing pricing not found'
-        },
+        { code: 'NOT_FOUND', message: 'Routing pricing not found' },
         { status: 404 }
       )
     }
 
-    return NextResponse.json(routing)
+    const routing = config.routings[0]
+    const response = {
+      routingId: routing.routingId,
+      routingName: routing.routingName,
+      category: routing.category,
+      baseCost: routing.baseCost,
+      materialMarkup: routing.materialMarkup,
+      finishingCost: routing.finishingCost,
+      leadTime: routing.leadTime,
+      tierOverrides: routing.tierOverrides || {}
+    }
 
+    return NextResponse.json(response)
   } catch (error) {
     console.error('GET /api/v2/pricing-config/[routingId] error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }
 }
 
-// PUT /api/v2/pricing-config/[routingId] - Update specific routing pricing (DEMO VERSION)
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { routingId: string } }
+  { params }: { params: Promise<{ routingId: string }> }
 ) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 300))
-
-    const { routingId } = params
+    const { routingId } = await params
     const body = await request.json()
-    
-    // Validate request body
+
     const validation = UpdateRoutingPricingSchema.safeParse(body)
     if (!validation.success) {
       return NextResponse.json(
@@ -145,40 +87,60 @@ export async function PUT(
       )
     }
 
-    // Find routing in mock configuration
-    const routingIndex = mockPricingConfig.routings.findIndex(r => r.routingId === routingId)
+    const updateData = validation.data
 
-    if (routingIndex === -1) {
+    // Get the published pricing configuration
+    const config = await prisma.pricingConfiguration.findFirst({
+      where: { status: 'published' },
+      include: {
+        routings: {
+          where: { routingId }
+        }
+      }
+    })
+
+    if (!config || config.routings.length === 0) {
       return NextResponse.json(
-        {
-          code: 'NOT_FOUND',
-          message: 'Routing pricing not found'
-        },
+        { code: 'NOT_FOUND', message: 'Routing pricing not found' },
         { status: 404 }
       )
     }
 
-    const updateData = validation.data
+    const routingPricing = config.routings[0]
 
-    // Update routing in mock configuration
-    const updatedRouting = {
-      ...mockPricingConfig.routings[routingIndex],
-      ...updateData
+    // Update the routing pricing
+    const updatedRouting = await prisma.routingPricing.update({
+      where: { id: routingPricing.id },
+      data: {
+        ...updateData,
+        tierOverrides: updateData.tierOverrides !== undefined 
+          ? updateData.tierOverrides as any
+          : routingPricing.tierOverrides
+      }
+    })
+
+    // Also update the configuration's updatedAt timestamp
+    await prisma.pricingConfiguration.update({
+      where: { id: config.id },
+      data: { updatedAt: new Date() }
+    })
+
+    const response = {
+      routingId: updatedRouting.routingId,
+      routingName: updatedRouting.routingName,
+      category: updatedRouting.category,
+      baseCost: updatedRouting.baseCost,
+      materialMarkup: updatedRouting.materialMarkup,
+      finishingCost: updatedRouting.finishingCost,
+      leadTime: updatedRouting.leadTime,
+      tierOverrides: updatedRouting.tierOverrides || {}
     }
-    
-    mockPricingConfig.routings[routingIndex] = updatedRouting
 
-    console.log('✏️ Updated routing pricing (DEMO):', updatedRouting)
-
-    return NextResponse.json(updatedRouting)
-
+    return NextResponse.json(response)
   } catch (error) {
     console.error('PUT /api/v2/pricing-config/[routingId] error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }

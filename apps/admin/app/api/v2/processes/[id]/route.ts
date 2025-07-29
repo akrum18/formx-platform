@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { prisma } from '../../../../../lib/prisma'
 
-// Validation schema for updating processes
 const UpdateProcessSchema = z.object({
   name: z.string().min(1, 'Name is required').optional(),
   category: z.string().min(1, 'Category is required').optional(),
@@ -12,58 +12,59 @@ const UpdateProcessSchema = z.object({
   active: z.boolean().optional()
 })
 
-// GET /api/v2/processes/[id] - Get a specific process (DEMO VERSION)
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 150))
+    const { id } = await params
+    
+    const process = await prisma.process.findUnique({
+      where: { id },
+      include: {
+        materials: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    })
 
-    const { id } = params
-
-    // Mock process lookup
-    const mockProcess = {
-      id,
-      name: `Process ${id}`,
-      category: "Machining",
-      setupTime: 30,
-      hourlyRate: 85,
-      minimumCost: 50,
-      complexityMultiplier: 1.2,
-      materials: ["Aluminum 6061", "Steel 1018"],
-      materialIds: ["mat-1", "mat-2"],
-      active: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+    if (!process) {
+      return NextResponse.json(
+        { code: 'NOT_FOUND', message: 'Process not found' },
+        { status: 404 }
+      )
     }
 
-    return NextResponse.json(mockProcess)
+    // Transform to match expected format
+    const response = {
+      ...process,
+      materials: process.materials.map(m => m.name),
+      materialIds: process.materials.map(m => m.id),
+      createdAt: process.createdAt.toISOString(),
+      updatedAt: process.updatedAt.toISOString()
+    }
 
+    return NextResponse.json(response)
   } catch (error) {
     console.error('GET /api/v2/processes/[id] error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }
 }
 
-// PUT /api/v2/processes/[id] - Update a specific process (DEMO VERSION)
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 250))
-
-    const { id } = params
+    const { id } = await params
     const body = await request.json()
     
-    // Validate request body
     const validation = UpdateProcessSchema.safeParse(body)
     if (!validation.success) {
       return NextResponse.json(
@@ -78,59 +79,68 @@ export async function PUT(
 
     const updateData = validation.data
 
-    // Create mock updated process
-    const updatedProcess = {
-      id,
-      name: updateData.name || `Process ${id}`,
-      category: updateData.category || "Machining",
-      setupTime: updateData.setupTime || 30,
-      hourlyRate: updateData.hourlyRate || 85,
-      minimumCost: updateData.minimumCost || 50,
-      complexityMultiplier: updateData.complexityMultiplier || 1.2,
-      materials: ["Aluminum 6061"], // Mock materials
-      materialIds: ["mat-1"],
-      active: updateData.active ?? true,
-      createdAt: new Date(Date.now() - 24*60*60*1000).toISOString(),
-      updatedAt: new Date().toISOString()
+    const updatedProcess = await prisma.process.update({
+      where: { id },
+      data: updateData,
+      include: {
+        materials: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    })
+
+    // Transform to match expected format
+    const response = {
+      ...updatedProcess,
+      materials: updatedProcess.materials.map(m => m.name),
+      materialIds: updatedProcess.materials.map(m => m.id),
+      createdAt: updatedProcess.createdAt.toISOString(),
+      updatedAt: updatedProcess.updatedAt.toISOString()
     }
 
-    console.log('✏️ Updated process (DEMO):', updatedProcess)
-
-    return NextResponse.json(updatedProcess)
-
-  } catch (error) {
+    return NextResponse.json(response)
+  } catch (error: any) {
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { code: 'NOT_FOUND', message: 'Process not found' },
+        { status: 404 }
+      )
+    }
+    
     console.error('PUT /api/v2/processes/[id] error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }
 }
 
-// DELETE /api/v2/processes/[id] - Delete a specific process (DEMO VERSION)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 200))
+    const { id } = await params
 
-    const { id } = params
-
-    console.log('🗑️ Deleted process (DEMO):', id)
+    await prisma.process.delete({
+      where: { id }
+    })
 
     return NextResponse.json({ message: 'Process deleted successfully' })
-
-  } catch (error) {
+  } catch (error: any) {
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { code: 'NOT_FOUND', message: 'Process not found' },
+        { status: 404 }
+      )
+    }
+    
     console.error('DELETE /api/v2/processes/[id] error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }

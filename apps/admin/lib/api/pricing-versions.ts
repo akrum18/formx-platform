@@ -135,7 +135,7 @@ export function useCreatePricingVersion() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: pricingVersionsAPI.createVersion,
+    mutationFn: (data: CreateVersionData) => pricingVersionsAPI.createVersion(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: pricingVersionsKeys.lists() })
     },
@@ -159,7 +159,7 @@ export function useDeletePricingVersion() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: pricingVersionsAPI.deleteVersion,
+    mutationFn: (id: string) => pricingVersionsAPI.deleteVersion(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: pricingVersionsKeys.lists() })
     },
@@ -170,7 +170,7 @@ export function usePublishPricingVersion() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: pricingVersionsAPI.publishVersion,
+    mutationFn: (id: string) => pricingVersionsAPI.publishVersion(id),
     onSuccess: (data) => {
       // Update all versions in cache with the returned data
       queryClient.setQueryData(pricingVersionsKeys.list(), data.allVersions)

@@ -129,7 +129,7 @@ export function useCreateFinish() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: finishesAPI.createFinish,
+    mutationFn: (data: CreateFinishData) => finishesAPI.createFinish(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: finishesKeys.lists() })
     },
@@ -153,7 +153,7 @@ export function useDeleteFinish() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: finishesAPI.deleteFinish,
+    mutationFn: (id: string) => finishesAPI.deleteFinish(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: finishesKeys.lists() })
     },

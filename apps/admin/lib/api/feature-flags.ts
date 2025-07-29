@@ -132,7 +132,7 @@ export function useCreateFeatureFlag() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: featureFlagAPI.createFeatureFlag,
+    mutationFn: (data: CreateFeatureFlagData) => featureFlagAPI.createFeatureFlag(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: featureFlagKeys.lists() })
     },
@@ -156,7 +156,7 @@ export function useDeleteFeatureFlag() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: featureFlagAPI.deleteFeatureFlag,
+    mutationFn: (id: string) => featureFlagAPI.deleteFeatureFlag(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: featureFlagKeys.lists() })
     },

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { prisma } from '../../../../lib/prisma'
 
 // Validation schemas
 const TierOverrideSchema = z.object({
@@ -44,116 +45,84 @@ const PricingConfigSchema = z.object({
   })
 })
 
-// Mock pricing configuration data
-const mockPricingConfig = {
-  id: "current",
-  routings: [
-    {
-      routingId: "1",
-      routingName: "Laser Cutting - Deburring - Press Brake Bending - TIG Welding",
-      category: "Sheet Metal",
-      baseCost: 185.5,
-      materialMarkup: 35,
-      finishingCost: 0.15,
-      leadTime: 5,
-      tierOverrides: {
-        rush: {
-          multiplier: 1.6,
-          leadTimeOverride: 3
-        }
-      }
-    },
-    {
-      routingId: "2",
-      routingName: "CNC Milling - Deburring - Anodizing",
-      category: "Machining",
-      baseCost: 245.75,
-      materialMarkup: 40,
-      finishingCost: 0.25,
-      leadTime: 7,
-      tierOverrides: {
-        economy: {
-          materialMarkupOverride: 35
-        },
-        rush: {
-          materialMarkupOverride: 45,
-          leadTimeOverride: 4
-        }
-      }
-    },
-    {
-      routingId: "4",
-      routingName: "CNC Milling",
-      category: "Machining",
-      baseCost: 135.0,
-      materialMarkup: 35,
-      finishingCost: 0,
-      leadTime: 3,
-      tierOverrides: {}
-    },
-    {
-      routingId: "5",
-      routingName: "Laser Cutting",
-      category: "Cutting",
-      baseCost: 45.25,
-      materialMarkup: 30,
-      finishingCost: 0,
-      leadTime: 2,
-      tierOverrides: {
-        economy: {
-          multiplier: 0.85
-        }
-      }
-    }
-  ],
-  globalSettings: {
-    defaultTierMultipliers: {
-      economy: 0.9,
-      standard: 1.0,
-      rush: 1.5
-    },
-    volumeBreaks: [
-      { id: "1", minQuantity: 1, maxQuantity: 9, discountPercent: 0 },
-      { id: "2", minQuantity: 10, maxQuantity: 49, discountPercent: 5 },
-      { id: "3", minQuantity: 50, maxQuantity: 99, discountPercent: 10 },
-      { id: "4", minQuantity: 100, maxQuantity: null, discountPercent: 15 }
-    ],
-    minimumOrderValue: 50
-  },
-  version: "v2.1",
-  status: "published",
-  createdAt: new Date(Date.now() - 7*24*60*60*1000).toISOString(),
-  updatedAt: new Date(Date.now() - 1*24*60*60*1000).toISOString()
-}
 
-// GET /api/v2/pricing-config - Get current pricing configuration (DEMO VERSION)
 export async function GET(request: NextRequest) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 200))
+    // Get the published pricing configuration
+    const config = await prisma.pricingConfiguration.findFirst({
+      where: { status: 'published' },
+      include: {
+        routings: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+    })
 
-    return NextResponse.json(mockPricingConfig)
+    if (!config) {
+      // Return default configuration if none exists
+      const defaultConfig = {
+        id: 'default',
+        routings: [],
+        globalSettings: {
+          defaultTierMultipliers: {
+            economy: 0.9,
+            standard: 1.0,
+            rush: 1.5
+          },
+          volumeBreaks: [
+            { id: "1", minQuantity: 1, maxQuantity: 9, discountPercent: 0 },
+            { id: "2", minQuantity: 10, maxQuantity: 49, discountPercent: 5 },
+            { id: "3", minQuantity: 50, maxQuantity: 99, discountPercent: 10 },
+            { id: "4", minQuantity: 100, maxQuantity: null, discountPercent: 15 }
+          ],
+          minimumOrderValue: 50
+        },
+        version: 'v1.0',
+        status: 'published',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+      return NextResponse.json(defaultConfig)
+    }
 
+    // Transform database format to API format
+    const response = {
+      id: config.id,
+      routings: config.routings.map(r => ({
+        routingId: r.routingId,
+        routingName: r.routingName,
+        category: r.category,
+        baseCost: r.baseCost,
+        materialMarkup: r.materialMarkup,
+        finishingCost: r.finishingCost,
+        leadTime: r.leadTime,
+        tierOverrides: r.tierOverrides || {}
+      })),
+      globalSettings: {
+        defaultTierMultipliers: config.defaultTierMultipliers,
+        volumeBreaks: config.volumeBreaks,
+        minimumOrderValue: config.minimumOrderValue
+      },
+      version: `v${config.version}.0`,
+      status: config.status,
+      createdAt: config.createdAt.toISOString(),
+      updatedAt: config.updatedAt.toISOString()
+    }
+
+    return NextResponse.json(response)
   } catch (error) {
     console.error('GET /api/v2/pricing-config error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }
 }
 
-// PUT /api/v2/pricing-config - Update pricing configuration (DEMO VERSION)
 export async function PUT(request: NextRequest) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 400))
-
     const body = await request.json()
-    
-    // Validate request body
     const validation = PricingConfigSchema.safeParse(body)
+    
     if (!validation.success) {
       return NextResponse.json(
         {
@@ -165,29 +134,97 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    const updateData = validation.data
+    const { routings, globalSettings } = validation.data
 
-    // Update mock configuration
-    const updatedConfig = {
-      ...mockPricingConfig,
-      ...updateData,
-      updatedAt: new Date().toISOString()
+    // Get or create pricing configuration
+    let config = await prisma.pricingConfiguration.findFirst({
+      where: { status: 'published' },
+      include: { routings: true }
+    })
+
+    if (!config) {
+      // Create new configuration if none exists
+      config = await prisma.pricingConfiguration.create({
+        data: {
+          defaultTierMultipliers: globalSettings.defaultTierMultipliers,
+          volumeBreaks: globalSettings.volumeBreaks,
+          minimumOrderValue: globalSettings.minimumOrderValue,
+          status: 'published',
+          createdBy: 'system', // TODO: Get from JWT token
+        },
+        include: { routings: true }
+      })
     }
 
-    // Update the mock data store
-    Object.assign(mockPricingConfig, updatedConfig)
+    // Update configuration
+    const updatedConfig = await prisma.pricingConfiguration.update({
+      where: { id: config.id },
+      data: {
+        defaultTierMultipliers: globalSettings.defaultTierMultipliers,
+        volumeBreaks: globalSettings.volumeBreaks,
+        minimumOrderValue: globalSettings.minimumOrderValue,
+      },
+      include: { routings: true }
+    })
 
-    console.log('✏️ Updated pricing configuration (DEMO):', updatedConfig)
+    // Delete existing routing pricing records
+    await prisma.routingPricing.deleteMany({
+      where: { configurationId: config.id }
+    })
 
-    return NextResponse.json(updatedConfig)
+    // Create new routing pricing records
+    if (routings.length > 0) {
+      await prisma.routingPricing.createMany({
+        data: routings.map(r => ({
+          configurationId: config.id,
+          routingId: r.routingId,
+          routingName: r.routingName,
+          category: r.category,
+          baseCost: r.baseCost,
+          materialMarkup: r.materialMarkup,
+          finishingCost: r.finishingCost,
+          leadTime: r.leadTime,
+          tierOverrides: r.tierOverrides as any,
+          createdBy: 'system', // TODO: Get from JWT token
+        }))
+      })
+    }
 
+    // Get updated configuration with routings
+    const finalConfig = await prisma.pricingConfiguration.findUnique({
+      where: { id: config.id },
+      include: { routings: true }
+    })
+
+    // Transform to API format
+    const response = {
+      id: finalConfig!.id,
+      routings: finalConfig!.routings.map(r => ({
+        routingId: r.routingId,
+        routingName: r.routingName,
+        category: r.category,
+        baseCost: r.baseCost,
+        materialMarkup: r.materialMarkup,
+        finishingCost: r.finishingCost,
+        leadTime: r.leadTime,
+        tierOverrides: r.tierOverrides || {}
+      })),
+      globalSettings: {
+        defaultTierMultipliers: finalConfig!.defaultTierMultipliers,
+        volumeBreaks: finalConfig!.volumeBreaks,
+        minimumOrderValue: finalConfig!.minimumOrderValue
+      },
+      version: `v${finalConfig!.version}.0`,
+      status: finalConfig!.status,
+      createdAt: finalConfig!.createdAt.toISOString(),
+      updatedAt: finalConfig!.updatedAt.toISOString()
+    }
+
+    return NextResponse.json(response)
   } catch (error) {
     console.error('PUT /api/v2/pricing-config error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }

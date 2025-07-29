@@ -143,7 +143,7 @@ export function useUpdatePricingConfig() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: pricingConfigAPI.updatePricingConfig,
+    mutationFn: (data: PricingConfiguration) => pricingConfigAPI.updatePricingConfig(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: pricingConfigKeys.config() })
       queryClient.invalidateQueries({ queryKey: pricingConfigKeys.routings() })

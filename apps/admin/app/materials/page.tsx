@@ -89,6 +89,33 @@ export default function MaterialsPage() {
     setIsDialogOpen(true)
   }
 
+  const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    
+    // Extract form values
+    const materialData = {
+      name: formData.get('name') as string,
+      cost: parseFloat(formData.get('cost') as string),
+      markup: parseFloat(formData.get('markup') as string),
+      density: parseFloat(formData.get('density') as string),
+      unit: formData.get('unit') as string || 'lb',
+      active: formData.get('active') === 'on',
+      processIds: [] // TODO: Extract from checkboxes
+    }
+
+    try {
+      if (editingMaterial) {
+        await updateMaterial.mutateAsync({ id: editingMaterial.id, data: materialData })
+      } else {
+        await createMaterial.mutateAsync(materialData)
+      }
+      setIsDialogOpen(false)
+    } catch (error) {
+      console.error('Error saving material:', error)
+    }
+  }
+
   const filteredMaterials = materials.filter(
     (material) =>
       material.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -220,7 +247,7 @@ export default function MaterialsPage() {
         typeof item.processes === "string"
           ? item.processes
               .split(";")
-              .map((p) => p.trim())
+              .map((p: string) => p.trim())
               .filter(Boolean)
           : item.processes || [],
       active: item.active !== undefined ? item.active : true,
@@ -395,23 +422,26 @@ export default function MaterialsPage() {
 
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogContent className="sm:max-w-[500px] bg-[#fefefe] rounded-2xl border-0 shadow-xl">
-            <DialogHeader>
-              <DialogTitle className="text-xl font-semibold text-[#525253]">
-                {editingMaterial ? "Edit Material" : "Add Material"}
-              </DialogTitle>
-              <DialogDescription className="text-[#908d8d]">
-                Configure material properties and pricing parameters
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-6 py-4">
+            <form onSubmit={handleSave}>
+              <DialogHeader>
+                <DialogTitle className="text-xl font-semibold text-[#525253]">
+                  {editingMaterial ? "Edit Material" : "Add Material"}
+                </DialogTitle>
+                <DialogDescription className="text-[#908d8d]">
+                  Configure material properties and pricing parameters
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-6 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="name" className="text-sm font-medium text-[#525253]">
                   Material Name
                 </Label>
                 <Input
                   id="name"
+                  name="name"
                   defaultValue={editingMaterial?.name}
                   className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
+                  required
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -421,10 +451,12 @@ export default function MaterialsPage() {
                   </Label>
                   <Input
                     id="cost"
+                    name="cost"
                     type="number"
                     step="0.01"
                     defaultValue={editingMaterial?.cost}
                     className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
+                    required
                   />
                 </div>
                 <div className="grid gap-2">
@@ -433,9 +465,11 @@ export default function MaterialsPage() {
                   </Label>
                   <Input
                     id="markup"
+                    name="markup"
                     type="number"
                     defaultValue={editingMaterial?.markup}
                     className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
+                    required
                   />
                 </div>
               </div>
@@ -445,12 +479,15 @@ export default function MaterialsPage() {
                 </Label>
                 <Input
                   id="density"
+                  name="density"
                   type="number"
                   step="0.01"
                   defaultValue={editingMaterial?.density}
                   className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
+                  required
                 />
               </div>
+              <input type="hidden" name="unit" value="lb" />
               <div className="grid gap-3">
                 <Label className="text-sm font-medium text-[#525253]">Compatible Processes</Label>
                 <div className="grid grid-cols-2 gap-3">
@@ -464,19 +501,21 @@ export default function MaterialsPage() {
                   ))}
                 </div>
               </div>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setIsDialogOpen(false)}
-                className="border-[#908d8d] text-[#525253] hover:bg-[#e8dcaa]"
-              >
-                Cancel
-              </Button>
-              <Button type="submit" className="bg-[#d4c273] hover:bg-[#d4c273]/80 text-[#fefefe]">
-                Save Material
-              </Button>
-            </DialogFooter>
+              </div>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsDialogOpen(false)}
+                  className="border-[#908d8d] text-[#525253] hover:bg-[#e8dcaa]"
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" className="bg-[#d4c273] hover:bg-[#d4c273]/80 text-[#fefefe]">
+                  Save Material
+                </Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
 

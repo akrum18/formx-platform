@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { prisma } from '../../../../../lib/prisma'
 
-// Validation schemas
 const RoutingStepSchema = z.object({
   processId: z.string().min(1, 'Process ID is required'),
   sequence: z.number().int().min(1, 'Sequence must be a positive integer'),
@@ -19,89 +19,83 @@ const UpdateRoutingSchema = z.object({
   materialMarkup: z.number().min(0, 'Material markup must be non-negative').optional(),
   finishingCost: z.number().min(0, 'Finishing cost must be non-negative').optional(),
   active: z.boolean().optional(),
-  isPrimaryPricingRoute: z.boolean().optional()
+  isPrimaryPricingRoute: z.boolean().optional(),
+  totalSetupTime: z.number().optional()
 })
 
-// GET /api/v2/routings/[id] - Get a specific routing (DEMO VERSION)
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 200))
+    const { id } = await params
+    
+    const routing = await prisma.routing.findUnique({
+      where: { id },
+      include: {
+        steps: {
+          include: {
+            process: true
+          },
+          orderBy: { sequence: 'asc' }
+        }
+      }
+    })
 
-    const { id } = params
-
-    // Mock routing lookup with complex steps
-    const mockRouting = {
-      id,
-      name: `Routing ${id}`,
-      description: "Complex multi-step manufacturing routing",
-      category: "Sheet Metal",
-      steps: [
-        {
-          id: "s1",
-          processId: "1",
-          processName: "Laser Cutting",
-          sequence: 1,
-          setupTimeMultiplier: 1.0,
-          runtimeMultiplier: 1.0,
-          notes: "Cut to size with standard tolerances",
-          setupTime: 15,
-          hourlyRate: 95,
-          minimumCost: 25,
-          complexityMultiplier: 1.0,
-        },
-        {
-          id: "s2",
-          processId: "9",
-          processName: "Deburring",
-          sequence: 2,
-          setupTimeMultiplier: 0.5,
-          runtimeMultiplier: 0.8,
-          notes: "Remove sharp edges",
-          setupTime: 5,
-          hourlyRate: 45,
-          minimumCost: 15,
-          complexityMultiplier: 0.5,
-        },
-      ],
-      totalSetupTime: 30,
-      estimatedLeadTime: 5,
-      active: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      materialMarkup: 35,
-      finishingCost: 0.15,
-      isPrimaryPricingRoute: false,
+    if (!routing) {
+      return NextResponse.json(
+        { code: 'NOT_FOUND', message: 'Routing not found' },
+        { status: 404 }
+      )
     }
 
-    return NextResponse.json(mockRouting)
+    // Transform to match expected format
+    const transformedSteps = routing.steps.map(step => ({
+      id: step.id,
+      processId: step.processId,
+      processName: step.process.name,
+      sequence: step.sequence,
+      setupTimeMultiplier: step.setupTimeMultiplier,
+      runtimeMultiplier: step.runtimeMultiplier,
+      notes: step.notes || '',
+      setupTime: step.process.setupTime,
+      hourlyRate: step.process.hourlyRate,
+      minimumCost: step.process.minimumCost,
+      complexityMultiplier: step.process.complexityMultiplier
+    }))
 
+    // Calculate total setup time
+    const totalSetupTime = transformedSteps.reduce((total, step) => 
+      total + (step.setupTime * step.setupTimeMultiplier), 0
+    )
+
+    const response = {
+      ...routing,
+      steps: transformedSteps,
+      totalSetupTime,
+      createdAt: routing.createdAt.toISOString(),
+      updatedAt: routing.updatedAt.toISOString(),
+      isPrimaryPricingRoute: false // TODO: Implement primary routing logic
+    }
+
+    return NextResponse.json(response)
   } catch (error) {
     console.error('GET /api/v2/routings/[id] error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }
 }
 
-// PUT /api/v2/routings/[id] - Update a specific routing (DEMO VERSION)
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 350))
-
-    const { id } = params
+    const { id } = await params
     const body = await request.json()
     
-    // Validate request body
     const validation = UpdateRoutingSchema.safeParse(body)
     if (!validation.success) {
       return NextResponse.json(
@@ -114,100 +108,172 @@ export async function PUT(
       )
     }
 
-    const updateData = validation.data
+    const { steps, ...updateData } = validation.data
 
-    // Mock enhanced steps if steps are being updated
-    let enhancedSteps = []
-    if (updateData.steps) {
-      enhancedSteps = updateData.steps.map((step, index) => ({
-        id: step.id || `step-${Date.now()}-${index}`,
-        processId: step.processId,
-        processName: `Process ${step.processId}`, // Mock process name
-        sequence: step.sequence,
-        setupTimeMultiplier: step.setupTimeMultiplier,
-        runtimeMultiplier: step.runtimeMultiplier,
-        notes: step.notes || "",
-        // Mock process pricing data
-        setupTime: 20,
-        hourlyRate: 75,
-        minimumCost: 35,
-        complexityMultiplier: 1.0,
-      }))
-    }
+    // Use transaction for updating routing and steps
+    const updatedRouting = await prisma.$transaction(async (tx) => {
+      let routingUpdateData = updateData
+      let processes: any[] = []
 
-    // Calculate total setup time if steps are updated
-    const totalSetupTime = enhancedSteps.length > 0 
-      ? enhancedSteps.reduce((total, step) => total + (step.setupTime * step.setupTimeMultiplier), 0)
-      : 30 // Mock default
+      // If steps are provided, calculate new total setup time
+      if (steps) {
+        // Fetch processes to calculate total setup time and get process names
+        const processIds = steps.map(step => step.processId)
+        processes = await tx.process.findMany({
+          where: { id: { in: processIds } },
+          select: { 
+            id: true, 
+            name: true, 
+            setupTime: true, 
+            hourlyRate: true, 
+            minimumCost: true, 
+            complexityMultiplier: true 
+          }
+        })
 
-    // Create mock updated routing
-    const updatedRouting = {
-      id,
-      name: updateData.name || `Routing ${id}`,
-      description: updateData.description || "Updated routing description",
-      category: updateData.category || "Sheet Metal",
-      steps: enhancedSteps.length > 0 ? enhancedSteps : [
-        {
-          id: "s1",
-          processId: "1",
-          processName: "Laser Cutting",
-          sequence: 1,
-          setupTimeMultiplier: 1.0,
-          runtimeMultiplier: 1.0,
-          notes: "Mock step",
-          setupTime: 15,
-          hourlyRate: 95,
-          minimumCost: 25,
-          complexityMultiplier: 1.0,
+        // Calculate total setup time
+        const totalSetupTime = steps.reduce((total, step) => {
+          const process = processes.find(p => p.id === step.processId)
+          return total + (process?.setupTime || 0) * step.setupTimeMultiplier
+        }, 0)
+
+        routingUpdateData = { ...updateData, totalSetupTime }
+      }
+
+      // Update the routing itself
+      const routing = await tx.routing.update({
+        where: { id },
+        data: routingUpdateData
+      })
+
+      // If steps are provided, replace all existing steps
+      if (steps) {
+        // Delete existing steps
+        await tx.routingStep.deleteMany({
+          where: { routingId: id }
+        })
+
+        // Create new steps
+        await tx.routingStep.createMany({
+          data: steps.map(step => {
+            const process = processes.find(p => p.id === step.processId)
+            return {
+              routingId: id,
+              processId: step.processId,
+              processName: process?.name || '',
+              sequence: step.sequence,
+              setupTimeMultiplier: step.setupTimeMultiplier,
+              runtimeMultiplier: step.runtimeMultiplier,
+              setupTime: process?.setupTime || 0,
+              hourlyRate: process?.hourlyRate || 0,
+              minimumCost: process?.minimumCost || 0,
+              complexityMultiplier: process?.complexityMultiplier || 1,
+              notes: step.notes || '',
+              createdBy: 'system' // TODO: Get from JWT token
+            }
+          })
+        })
+      }
+
+      // Return updated routing with steps
+      return await tx.routing.findUnique({
+        where: { id },
+        include: {
+          steps: {
+            include: {
+              process: true
+            },
+            orderBy: { sequence: 'asc' }
+          }
         }
-      ],
-      totalSetupTime,
-      estimatedLeadTime: updateData.estimatedLeadTime || 5,
-      materialMarkup: updateData.materialMarkup || 35,
-      finishingCost: updateData.finishingCost || 0.15,
-      active: updateData.active ?? true,
-      isPrimaryPricingRoute: updateData.isPrimaryPricingRoute ?? false,
-      createdAt: new Date(Date.now() - 24*60*60*1000).toISOString(),
-      updatedAt: new Date().toISOString()
+      })
+    })
+
+    if (!updatedRouting) {
+      return NextResponse.json(
+        { code: 'NOT_FOUND', message: 'Routing not found' },
+        { status: 404 }
+      )
     }
 
-    console.log('✏️ Updated routing (DEMO):', updatedRouting)
+    // Transform to match expected format
+    const transformedSteps = updatedRouting.steps.map(step => ({
+      id: step.id,
+      processId: step.processId,
+      processName: step.process.name,
+      sequence: step.sequence,
+      setupTimeMultiplier: step.setupTimeMultiplier,
+      runtimeMultiplier: step.runtimeMultiplier,
+      notes: step.notes || '',
+      setupTime: step.process.setupTime,
+      hourlyRate: step.process.hourlyRate,
+      minimumCost: step.process.minimumCost,
+      complexityMultiplier: step.process.complexityMultiplier
+    }))
 
-    return NextResponse.json(updatedRouting)
+    // Calculate total setup time
+    const totalSetupTime = transformedSteps.reduce((total, step) => 
+      total + (step.setupTime * step.setupTimeMultiplier), 0
+    )
 
-  } catch (error) {
+    const response = {
+      ...updatedRouting,
+      steps: transformedSteps,
+      totalSetupTime,
+      createdAt: updatedRouting.createdAt.toISOString(),
+      updatedAt: updatedRouting.updatedAt.toISOString(),
+      isPrimaryPricingRoute: false
+    }
+
+    return NextResponse.json(response)
+  } catch (error: any) {
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { code: 'NOT_FOUND', message: 'Routing not found' },
+        { status: 404 }
+      )
+    }
+    
     console.error('PUT /api/v2/routings/[id] error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }
 }
 
-// DELETE /api/v2/routings/[id] - Delete a specific routing (DEMO VERSION)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await new Promise(resolve => setTimeout(resolve, 250))
+    const { id } = await params
 
-    const { id } = params
+    // Use transaction to delete routing and its steps
+    await prisma.$transaction(async (tx) => {
+      // Delete routing steps first (due to foreign key constraint)
+      await tx.routingStep.deleteMany({
+        where: { routingId: id }
+      })
 
-    console.log('🗑️ Deleted routing (DEMO):', id)
+      // Delete the routing
+      await tx.routing.delete({
+        where: { id }
+      })
+    })
 
     return NextResponse.json({ message: 'Routing deleted successfully' })
-
-  } catch (error) {
+  } catch (error: any) {
+    if (error.code === 'P2025') {
+      return NextResponse.json(
+        { code: 'NOT_FOUND', message: 'Routing not found' },
+        { status: 404 }
+      )
+    }
+    
     console.error('DELETE /api/v2/routings/[id] error:', error)
     return NextResponse.json(
-      {
-        code: 'INTERNAL_ERROR',
-        message: 'An internal error occurred'
-      },
+      { code: 'INTERNAL_ERROR', message: 'An internal error occurred' },
       { status: 500 }
     )
   }

@@ -51,179 +51,10 @@ import {
   type Routing as APIRouting,
   type RoutingStep as APIRoutingStep
 } from "@/lib/api/routings"
+import { useProcesses, type Process } from "@/lib/api/processes"
 
 type RoutingStep = APIRoutingStep
 type Routing = APIRouting
-
-const mockProcesses = [
-  // Primary Operations
-  {
-    id: "1",
-    name: "Laser Cutting",
-    category: "Primary",
-    setupTime: 15,
-    hourlyRate: 95,
-    minimumCost: 25,
-    complexityMultiplier: 1.0,
-  },
-  {
-    id: "2",
-    name: "CNC Milling",
-    category: "Primary",
-    setupTime: 30,
-    hourlyRate: 85,
-    minimumCost: 50,
-    complexityMultiplier: 1.2,
-  },
-  {
-    id: "3",
-    name: "CNC Turning",
-    category: "Primary",
-    setupTime: 20,
-    hourlyRate: 75,
-    minimumCost: 40,
-    complexityMultiplier: 1.0,
-  },
-  {
-    id: "4",
-    name: "Press Brake Bending",
-    category: "Primary",
-    setupTime: 10,
-    hourlyRate: 65,
-    minimumCost: 30,
-    complexityMultiplier: 0.8,
-  },
-  {
-    id: "5",
-    name: "Waterjet Cutting",
-    category: "Primary",
-    setupTime: 20,
-    hourlyRate: 110,
-    minimumCost: 35,
-    complexityMultiplier: 1.1,
-  },
-  {
-    id: "6",
-    name: "Plasma Cutting",
-    category: "Primary",
-    setupTime: 12,
-    hourlyRate: 70,
-    minimumCost: 25,
-    complexityMultiplier: 0.9,
-  },
-
-  // Secondary Operations
-  {
-    id: "7",
-    name: "TIG Welding",
-    category: "Secondary",
-    setupTime: 25,
-    hourlyRate: 90,
-    minimumCost: 45,
-    complexityMultiplier: 1.5,
-  },
-  {
-    id: "8",
-    name: "MIG Welding",
-    category: "Secondary",
-    setupTime: 20,
-    hourlyRate: 80,
-    minimumCost: 40,
-    complexityMultiplier: 1.3,
-  },
-  {
-    id: "9",
-    name: "Deburring",
-    category: "Secondary",
-    setupTime: 5,
-    hourlyRate: 45,
-    minimumCost: 15,
-    complexityMultiplier: 0.5,
-  },
-  {
-    id: "10",
-    name: "Tapping",
-    category: "Secondary",
-    setupTime: 8,
-    hourlyRate: 55,
-    minimumCost: 20,
-    complexityMultiplier: 0.7,
-  },
-  {
-    id: "11",
-    name: "Assembly",
-    category: "Secondary",
-    setupTime: 15,
-    hourlyRate: 60,
-    minimumCost: 30,
-    complexityMultiplier: 1.0,
-  },
-  {
-    id: "12",
-    name: "Heat Treatment",
-    category: "Secondary",
-    setupTime: 30,
-    hourlyRate: 75,
-    minimumCost: 50,
-    complexityMultiplier: 1.2,
-  },
-
-  // Finishing Operations
-  {
-    id: "13",
-    name: "Powder Coating",
-    category: "Finishing",
-    setupTime: 20,
-    hourlyRate: 65,
-    minimumCost: 35,
-    complexityMultiplier: 1.0,
-  },
-  {
-    id: "14",
-    name: "Anodizing",
-    category: "Finishing",
-    setupTime: 25,
-    hourlyRate: 70,
-    minimumCost: 40,
-    complexityMultiplier: 1.1,
-  },
-  {
-    id: "15",
-    name: "Plating",
-    category: "Finishing",
-    setupTime: 30,
-    hourlyRate: 80,
-    minimumCost: 45,
-    complexityMultiplier: 1.2,
-  },
-  {
-    id: "16",
-    name: "Painting",
-    category: "Finishing",
-    setupTime: 15,
-    hourlyRate: 55,
-    minimumCost: 30,
-    complexityMultiplier: 0.9,
-  },
-  {
-    id: "17",
-    name: "Passivation",
-    category: "Finishing",
-    setupTime: 10,
-    hourlyRate: 60,
-    minimumCost: 25,
-    complexityMultiplier: 0.8,
-  },
-  {
-    id: "18",
-    name: "Polishing",
-    category: "Finishing",
-    setupTime: 20,
-    hourlyRate: 65,
-    minimumCost: 35,
-    complexityMultiplier: 1.0,
-  },
-]
 
 const mockRoutings: Routing[] = [
   {
@@ -467,6 +298,7 @@ const mockRoutings: Routing[] = [
 
 export default function RoutingsPage() {
   const { data: routings = [], isLoading, error } = useRoutings()
+  const { data: processes = [], isLoading: processesLoading } = useProcesses({ active: true })
   const createRouting = useCreateRouting()
   const updateRouting = useUpdateRouting()
   const deleteRouting = useDeleteRouting()
@@ -822,7 +654,7 @@ export default function RoutingsPage() {
           isOpen={isDialogOpen}
           onClose={() => setIsDialogOpen(false)}
           routing={editingRouting}
-          processes={mockProcesses}
+          processes={processes}
           isLoading={createRouting.isPending || updateRouting.isPending}
           onSave={async (routingData) => {
             try {
@@ -833,19 +665,19 @@ export default function RoutingsPage() {
                 })
               } else {
                 await createRouting.mutateAsync({
-                  name: routingData.name,
-                  description: routingData.description,
-                  category: routingData.category,
-                  steps: routingData.steps.map(step => ({
+                  name: routingData.name || '',
+                  description: routingData.description || '',
+                  category: routingData.category || '',
+                  steps: (routingData.steps || []).map(step => ({
                     processId: step.processId,
                     sequence: step.sequence,
                     setupTimeMultiplier: step.setupTimeMultiplier,
                     runtimeMultiplier: step.runtimeMultiplier,
                     notes: step.notes
                   })),
-                  estimatedLeadTime: routingData.estimatedLeadTime,
-                  materialMarkup: routingData.materialMarkup,
-                  finishingCost: routingData.finishingCost,
+                  estimatedLeadTime: routingData.estimatedLeadTime || 7,
+                  materialMarkup: routingData.materialMarkup || 0,
+                  finishingCost: routingData.finishingCost || 0,
                   active: routingData.active ?? true
                 })
               }
@@ -1186,50 +1018,44 @@ function RoutingDialog({ isOpen, onClose, routing, processes, isLoading = false,
                     <SelectValue placeholder="Select a process to add" />
                   </SelectTrigger>
                   <SelectContent>
-                    {/* Primary Operations */}
-                    <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50">
-                      Primary Operations
-                    </div>
-                    {processes
-                      .filter((process) => process.category === "Primary")
-                      .map((process) => (
-                        <SelectItem key={process.id} value={process.id} className="pl-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                            {process.name}
+                    {/* Dynamic category grouping */}
+                    {Object.entries(
+                      processes.reduce((groups, process) => {
+                        const category = process.category || 'Other'
+                        if (!groups[category]) groups[category] = []
+                        groups[category].push(process)
+                        return groups
+                      }, {} as Record<string, typeof processes>)
+                    ).map(([category, categoryProcesses], index) => {
+                      // Define colors for different categories
+                      const getCategoryColor = (cat: string) => {
+                        switch (cat.toLowerCase()) {
+                          case 'machining': return 'bg-blue-500'
+                          case 'cutting': return 'bg-red-500'
+                          case 'welding': return 'bg-orange-500'
+                          case 'finishing': return 'bg-green-500'
+                          case 'assembly': return 'bg-purple-500'
+                          default: return 'bg-gray-500'
+                        }
+                      }
+                      
+                      return (
+                        <React.Fragment key={category}>
+                          {index > 0 && <div className="h-px bg-slate-200 my-1" />}
+                          <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50">
+                            {category}
                           </div>
-                        </SelectItem>
-                      ))}
-
-                    {/* Secondary Operations */}
-                    <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50 mt-2">
-                      Secondary Operations
-                    </div>
-                    {processes
-                      .filter((process) => process.category === "Secondary")
-                      .map((process) => (
-                        <SelectItem key={process.id} value={process.id} className="pl-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                            {process.name}
-                          </div>
-                        </SelectItem>
-                      ))}
-
-                    {/* Finishing Operations */}
-                    <div className="px-2 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider bg-slate-50 mt-2">
-                      Finishing Operations
-                    </div>
-                    {processes
-                      .filter((process) => process.category === "Finishing")
-                      .map((process) => (
-                        <SelectItem key={process.id} value={process.id} className="pl-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                            {process.name}
-                          </div>
-                        </SelectItem>
-                      ))}
+                          {categoryProcesses.map((process) => (
+                            <SelectItem key={process.id} value={process.id} className="pl-4">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-2 h-2 ${getCategoryColor(category)} rounded-full`}></div>
+                                {process.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </React.Fragment>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
                 <Button onClick={addStep} disabled={!selectedProcessId} className="bg-blue-600 hover:bg-blue-700">

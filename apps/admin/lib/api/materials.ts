@@ -136,7 +136,7 @@ export function useCreateMaterial() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: materialsAPI.createMaterial,
+    mutationFn: (data: CreateMaterialData) => materialsAPI.createMaterial(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: materialsKeys.lists() })
     },
@@ -160,7 +160,7 @@ export function useDeleteMaterial() {
   const queryClient = useQueryClient()
   
   return useMutation({
-    mutationFn: materialsAPI.deleteMaterial,
+    mutationFn: (id: string) => materialsAPI.deleteMaterial(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: materialsKeys.lists() })
     },

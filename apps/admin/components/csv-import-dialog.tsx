@@ -227,7 +227,7 @@ export function CSVImportDialog({ isOpen, onClose, onImport, entityType, fieldMa
 
       Object.entries(mappings).forEach(([csvHeader, dbField]) => {
         const csvIndex = parsedCSV.headers.indexOf(csvHeader)
-        let value = row[csvIndex]
+        let value: any = row[csvIndex]
 
         // Type conversion
         const fieldConfig = fieldMappings[dbField]
