@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../lib/auth'
 
 const FinishSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -12,7 +13,7 @@ const FinishSchema = z.object({
 })
 
 
-export async function GET(request: NextRequest) {
+export const GET = requirePermission('finishes', async (request: NextRequest, user: any) => {
   try {
     const { searchParams } = new URL(request.url)
     const active = searchParams.get('active')
@@ -42,9 +43,9 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
-export async function POST(request: NextRequest) {
+export const POST = requirePermission('finishes', async (request: NextRequest, user: any) => {
   try {
     const body = await request.json()
     const validation = FinishSchema.safeParse(body)
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
         leadTimeDays,
         description: description || null,
         active: active ?? true,
-        createdBy: 'system', // TODO: Get from JWT token
+        createdBy: user.id,
       }
     })
     
@@ -82,4 +83,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

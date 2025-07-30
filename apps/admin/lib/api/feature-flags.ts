@@ -37,7 +37,7 @@ class FeatureFlagAPI {
   private baseUrl = '/api/v2/feature-flags'
 
   private async request<T>(url: string, options?: RequestInit): Promise<T> {
-    const token = localStorage.getItem('accessToken')
+    const token = localStorage.getItem('auth_token')
     
     const response = await fetch(url, {
       ...options,

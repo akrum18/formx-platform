@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../../lib/auth'
 
 const UpdateMaterialSchema = z.object({
   name: z.string().min(1, 'Name is required').optional(),
@@ -12,10 +13,11 @@ const UpdateMaterialSchema = z.object({
   active: z.boolean().optional()
 })
 
-export async function GET(
+export const GET = requirePermission('materials', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
     
@@ -55,12 +57,13 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
-export async function PUT(
+export const PUT = requirePermission('materials', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
     const body = await request.json()
@@ -127,12 +130,13 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})
 
-export async function DELETE(
+export const DELETE = requirePermission('materials', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
 
@@ -155,4 +159,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

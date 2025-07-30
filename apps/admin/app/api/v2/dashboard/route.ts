@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../lib/auth'
 
 function getRecentCount(items: any[], days: number = 30): number {
   const cutoffDate = new Date()
@@ -34,7 +35,7 @@ function getLastUpdateInfo(items: any[]): string {
   return `Updated ${Math.floor(daysAgo / 30)} months ago`
 }
 
-export async function GET(request: NextRequest) {
+export const GET = requirePermission('dashboard', async (request: NextRequest, user: any) => {
   try {
     // Fetch real data from Prisma
     const [
@@ -177,4 +178,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

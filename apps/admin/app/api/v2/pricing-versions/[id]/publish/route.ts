@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '../../../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../../../lib/auth'
 
-export async function POST(
+export const POST = requirePermission('versions', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
 
@@ -91,4 +93,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

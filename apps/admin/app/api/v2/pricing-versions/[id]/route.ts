@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../../lib/auth'
 
 const UpdateVersionSchema = z.object({
   description: z.string().min(1, 'Description is required').optional(),
@@ -8,10 +9,11 @@ const UpdateVersionSchema = z.object({
   status: z.enum(['draft', 'published', 'archived']).optional()
 })
 
-export async function GET(
+export const GET = requirePermission('versions', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
     const config = await prisma.pricingConfiguration.findUnique({
@@ -63,12 +65,13 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
-export async function PUT(
+export const PUT = requirePermission('versions', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
     const body = await request.json()
@@ -140,12 +143,13 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})
 
-export async function DELETE(
+export const DELETE = requirePermission('versions', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
     // First check if this version exists and is not published
@@ -192,4 +196,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

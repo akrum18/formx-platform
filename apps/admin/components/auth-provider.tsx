@@ -30,59 +30,100 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
   useEffect(() => {
-    // Check for existing auth token on mount
-    const token = localStorage.getItem("auth_token")
-    const userData = localStorage.getItem("user_data")
+    // Check for existing auth token on mount and validate it
+    const checkAuthStatus = async () => {
+      const token = localStorage.getItem("auth_token")
+      
+      if (token) {
+        try {
+          const response = await fetch("/api/v2/auth/me", {
+            headers: {
+              "Authorization": `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          })
 
-    if (token && userData) {
-      try {
-        const parsedUser = JSON.parse(userData)
-        setUser(parsedUser)
-      } catch (error) {
-        // Invalid user data, clear storage
-        localStorage.removeItem("auth_token")
-        localStorage.removeItem("user_data")
+          if (response.ok) {
+            const data = await response.json()
+            setUser(data.user)
+          } else {
+            // Token is invalid, clear storage
+            localStorage.removeItem("auth_token")
+            localStorage.removeItem("user_data")
+          }
+        } catch (error) {
+          console.error("Auth check failed:", error)
+          localStorage.removeItem("auth_token")
+          localStorage.removeItem("user_data")
+        }
       }
+
+      setIsLoading(false)
     }
 
-    setIsLoading(false)
+    checkAuthStatus()
   }, [])
 
   useEffect(() => {
     // Redirect to login if not authenticated and not already on login page
-    if (!isLoading && !user && pathname !== "/login") {
+    if (!isLoading && !user && pathname !== "/login" && pathname !== "/forgot-password") {
       router.push("/login")
+    }
+    // Redirect to dashboard if authenticated and on login page
+    if (!isLoading && user && pathname === "/login") {
+      router.push("/")
     }
   }, [user, isLoading, pathname, router])
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      // Mock authentication - replace with real API call
-      if (email === "admin@manufacturing.com" && password === "admin123") {
-        const userData: User = {
-          id: "1",
-          email,
-          name: "Admin User",
-          role: "admin",
-          permissions: ["materials", "processes", "routings", "finishes", "margins", "features", "versions"],
-        }
+      const response = await fetch("/api/v2/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      })
 
-        localStorage.setItem("auth_token", "mock_token_123")
-        localStorage.setItem("user_data", JSON.stringify(userData))
-        setUser(userData)
+      if (response.ok) {
+        const data = await response.json()
+        
+        // Store token and user data
+        localStorage.setItem("auth_token", data.token)
+        localStorage.setItem("user_data", JSON.stringify(data.user))
+        setUser(data.user)
         return true
+      } else {
+        const errorData = await response.json()
+        console.error("Login failed:", errorData.error)
+        return false
       }
-      return false
     } catch (error) {
+      console.error("Login error:", error)
       return false
     }
   }
 
-  const logout = () => {
-    localStorage.removeItem("auth_token")
-    localStorage.removeItem("user_data")
-    setUser(null)
-    router.push("/login")
+  const logout = async () => {
+    try {
+      const token = localStorage.getItem("auth_token")
+      if (token) {
+        await fetch("/api/v2/auth/logout", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        })
+      }
+    } catch (error) {
+      console.error("Logout error:", error)
+    } finally {
+      localStorage.removeItem("auth_token")
+      localStorage.removeItem("user_data")
+      setUser(null)
+      router.push("/login")
+    }
   }
 
   const hasPermission = (permission: string): boolean => {

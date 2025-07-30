@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../lib/auth'
 
 // Validation schemas
 const TierOverrideSchema = z.object({
@@ -46,7 +47,7 @@ const PricingConfigSchema = z.object({
 })
 
 
-export async function GET(request: NextRequest) {
+export const GET = requirePermission('margins', async (request: NextRequest, user: any) => {
   try {
     // Get the published pricing configuration
     const config = await prisma.pricingConfiguration.findFirst({
@@ -116,9 +117,9 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
-export async function PUT(request: NextRequest) {
+export const PUT = requirePermission('margins', async (request: NextRequest, user: any) => {
   try {
     const body = await request.json()
     const validation = PricingConfigSchema.safeParse(body)
@@ -150,7 +151,7 @@ export async function PUT(request: NextRequest) {
           volumeBreaks: globalSettings.volumeBreaks,
           minimumOrderValue: globalSettings.minimumOrderValue,
           status: 'published',
-          createdBy: 'system', // TODO: Get from JWT token
+          createdBy: user.id,
         },
         include: { routings: true }
       })
@@ -185,7 +186,7 @@ export async function PUT(request: NextRequest) {
           finishingCost: r.finishingCost,
           leadTime: r.leadTime,
           tierOverrides: r.tierOverrides as any,
-          createdBy: 'system', // TODO: Get from JWT token
+          createdBy: user.id,
         }))
       })
     }
@@ -228,4 +229,4 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../../lib/auth'
 
 const RoutingStepSchema = z.object({
   processId: z.string().min(1, 'Process ID is required'),
@@ -23,10 +24,11 @@ const UpdateRoutingSchema = z.object({
   totalSetupTime: z.number().optional()
 })
 
-export async function GET(
+export const GET = requirePermission('routings', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
     
@@ -86,12 +88,13 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
-export async function PUT(
+export const PUT = requirePermission('routings', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
     const body = await request.json()
@@ -169,7 +172,7 @@ export async function PUT(
               minimumCost: process?.minimumCost || 0,
               complexityMultiplier: process?.complexityMultiplier || 1,
               notes: step.notes || '',
-              createdBy: 'system' // TODO: Get from JWT token
+              createdBy: user.id
             }
           })
         })
@@ -240,12 +243,13 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})
 
-export async function DELETE(
+export const DELETE = requirePermission('routings', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
 
@@ -277,4 +281,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

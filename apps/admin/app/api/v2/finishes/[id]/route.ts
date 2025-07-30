@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../../lib/auth'
 
 const UpdateFinishSchema = z.object({
   name: z.string().min(1, 'Name is required').optional(),
@@ -12,10 +13,11 @@ const UpdateFinishSchema = z.object({
 })
 
 
-export async function GET(
+export const GET = requirePermission('finishes', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
     const finish = await prisma.finish.findUnique({
@@ -37,12 +39,13 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
-export async function PUT(
+export const PUT = requirePermission('finishes', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
     const body = await request.json()
@@ -84,12 +87,13 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})
 
-export async function DELETE(
+export const DELETE = requirePermission('finishes', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ id: string }> }
-) {
+) => {
   try {
     const { id } = await params
     // Soft delete by setting active to false
@@ -113,4 +117,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

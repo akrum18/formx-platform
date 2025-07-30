@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../lib/auth'
 
 const RoutingStepSchema = z.object({
   processId: z.string().min(1, 'Process ID is required'),
@@ -21,7 +22,7 @@ const RoutingSchema = z.object({
   active: z.boolean().optional().default(true)
 })
 
-export async function GET(request: NextRequest) {
+export const GET = requirePermission('routings', async (request: NextRequest, user: any) => {
   try {
     const { searchParams } = new URL(request.url)
     const active = searchParams.get('active')
@@ -98,9 +99,9 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
-export async function POST(request: NextRequest) {
+export const POST = requirePermission('routings', async (request: NextRequest, user: any) => {
   try {
     const body = await request.json()
     
@@ -143,7 +144,7 @@ export async function POST(request: NextRequest) {
       data: {
         ...routingData,
         totalSetupTime,
-        createdBy: 'system', // TODO: Get from JWT token
+        createdBy: user.id,
         steps: {
           create: steps.map(step => {
             const process = processes.find(p => p.id === step.processId)
@@ -158,7 +159,7 @@ export async function POST(request: NextRequest) {
               minimumCost: process?.minimumCost || 0,
               complexityMultiplier: process?.complexityMultiplier || 1,
               notes: step.notes || '',
-              createdBy: 'system' // TODO: Get from JWT token
+              createdBy: user.id
             }
           })
         }
@@ -205,4 +206,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

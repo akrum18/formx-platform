@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../../lib/auth'
 
 const TierOverrideSchema = z.object({
   multiplier: z.number().min(0.1).optional(),
@@ -21,10 +22,11 @@ const UpdateRoutingPricingSchema = z.object({
   }).optional()
 })
 
-export async function GET(
+export const GET = requirePermission('margins', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ routingId: string }> }
-) {
+) => {
   try {
     const { routingId } = await params
 
@@ -65,12 +67,13 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
-export async function PUT(
+export const PUT = requirePermission('margins', async (
   request: NextRequest,
+  user: any,
   { params }: { params: Promise<{ routingId: string }> }
-) {
+) => {
   try {
     const { routingId } = await params
     const body = await request.json()
@@ -144,4 +147,4 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})

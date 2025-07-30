@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../lib/auth'
 
 const FeatureFlagSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -11,7 +12,7 @@ const FeatureFlagSchema = z.object({
 })
 
 
-export async function GET(request: NextRequest) {
+export const GET = requirePermission('features', async (request: NextRequest, user: any) => {
   try {
     // Parse query params
     const { searchParams } = new URL(request.url)
@@ -54,9 +55,9 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
-export async function POST(request: NextRequest) {
+export const POST = requirePermission('features', async (request: NextRequest, user: any) => {
   try {
     const body = await request.json()
     const validation = FeatureFlagSchema.safeParse(body)
@@ -96,4 +97,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

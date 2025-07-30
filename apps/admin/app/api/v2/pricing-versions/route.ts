@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../lib/auth'
 
 const CreateVersionSchema = z.object({
   version: z.string().min(1, 'Version is required'),
@@ -15,7 +16,7 @@ const UpdateVersionSchema = z.object({
   status: z.enum(['draft', 'published', 'archived']).optional()
 })
 
-export async function GET(request: NextRequest) {
+export const GET = requirePermission('versions', async (request: NextRequest, user: any) => {
   try {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
@@ -70,9 +71,9 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
-export async function POST(request: NextRequest) {
+export const POST = requirePermission('versions', async (request: NextRequest, user: any) => {
   try {
     const body = await request.json()
     const validation = CreateVersionSchema.safeParse(body)
@@ -125,7 +126,7 @@ export async function POST(request: NextRequest) {
         minimumOrderValue: baseConfig?.minimumOrderValue || 50,
         version: versionNumber,
         status: 'draft',
-        createdBy: 'system', // TODO: Get from JWT token
+        createdBy: user.id,
       },
       include: { routings: true }
     })
@@ -143,7 +144,7 @@ export async function POST(request: NextRequest) {
           finishingCost: r.finishingCost,
           leadTime: r.leadTime,
           tierOverrides: r.tierOverrides as any,
-          createdBy: 'system', // TODO: Get from JWT token
+          createdBy: user.id,
         }))
       })
     }
@@ -191,4 +192,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

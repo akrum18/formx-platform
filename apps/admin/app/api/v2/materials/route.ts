@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../lib/prisma'
+import { requireAuth, requirePermission } from '../../../../lib/auth'
 
 const MaterialSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -12,7 +13,7 @@ const MaterialSchema = z.object({
   active: z.boolean().optional().default(true)
 })
 
-export async function GET(request: NextRequest) {
+export const GET = requirePermission('materials', async (request: NextRequest) => {
   try {
     const { searchParams } = new URL(request.url)
     const active = searchParams.get('active')
@@ -71,9 +72,9 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
-export async function POST(request: NextRequest) {
+export const POST = requirePermission('materials', async (request: NextRequest, user) => {
   try {
     const body = await request.json()
     
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
     const newMaterial = await prisma.material.create({
       data: {
         ...materialData,
-        createdBy: 'system', // TODO: Get from JWT token
+        createdBy: user.id,
         processes: processIds.length > 0 ? {
           connect: processIds.map(id => ({ id }))
         } : undefined
@@ -126,4 +127,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
