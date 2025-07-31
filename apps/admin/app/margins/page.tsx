@@ -60,6 +60,23 @@ export default function MarginsPage() {
     changes: [""]
   })
 
+  // Helper function to update global settings
+  const updateGlobalSettings = async (updates: Partial<PricingConfiguration['globalSettings']>) => {
+    if (!config) return
+    
+    try {
+      await updatePricingConfig.mutateAsync({
+        ...config,
+        globalSettings: {
+          ...config.globalSettings,
+          ...updates
+        }
+      })
+    } catch (error) {
+      console.error('Failed to update global settings:', error)
+    }
+  }
+
   // Helper functions
   const getRoutingsByProcess = (processName: string) => {
     if (!routings) return []
@@ -495,8 +512,12 @@ export default function MarginsPage() {
                     step="0.1"
                     value={config.globalSettings.defaultTierMultipliers.economy}
                     onChange={(e) => {
-                      // TODO: Implement global settings update API
-                      console.log('Update economy multiplier:', e.target.value)
+                      updateGlobalSettings({
+                        defaultTierMultipliers: {
+                          ...config.globalSettings.defaultTierMultipliers,
+                          economy: parseFloat(e.target.value) || 0.9
+                        }
+                      })
                     }}
                     className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
                   />
@@ -509,8 +530,12 @@ export default function MarginsPage() {
                     step="0.1"
                     value={config.globalSettings.defaultTierMultipliers.standard}
                     onChange={(e) => {
-                      // TODO: Implement global settings update API
-                      console.log('Update standard multiplier:', e.target.value)
+                      updateGlobalSettings({
+                        defaultTierMultipliers: {
+                          ...config.globalSettings.defaultTierMultipliers,
+                          standard: parseFloat(e.target.value) || 1.0
+                        }
+                      })
                     }}
                     className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
                   />
@@ -523,8 +548,12 @@ export default function MarginsPage() {
                     step="0.1"
                     value={config.globalSettings.defaultTierMultipliers.rush}
                     onChange={(e) => {
-                      // TODO: Implement global settings update API
-                      console.log('Update rush multiplier:', e.target.value)
+                      updateGlobalSettings({
+                        defaultTierMultipliers: {
+                          ...config.globalSettings.defaultTierMultipliers,
+                          rush: parseFloat(e.target.value) || 1.5
+                        }
+                      })
                     }}
                     className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
                   />
@@ -744,8 +773,9 @@ export default function MarginsPage() {
                   type="number"
                   value={config.globalSettings.minimumOrderValue}
                   onChange={(e) => {
-                    // TODO: Implement global settings update API
-                    console.log('Update minimum order value:', e.target.value)
+                    updateGlobalSettings({
+                      minimumOrderValue: parseFloat(e.target.value) || 0
+                    })
                   }}
                   className="border-[#908d8d] focus:border-[#d4c273] focus:ring-[#d4c273]"
                 />

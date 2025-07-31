@@ -34,6 +34,7 @@ import {
   useToggleMaterialActive,
   type Material as APIMaterial
 } from "@/lib/api/materials"
+import { useProcesses, type Process } from "@/lib/api/processes"
 
 type Material = APIMaterial
 
@@ -56,6 +57,7 @@ const materialFieldMappings = {
 
 export default function MaterialsPage() {
   const { data: materials = [], isLoading, error } = useMaterials()
+  const { data: processes = [], isLoading: processesLoading } = useProcesses({ active: true })
   const createMaterial = useCreateMaterial()
   const updateMaterial = useUpdateMaterial()
   const deleteMaterial = useDeleteMaterial()
@@ -65,6 +67,7 @@ export default function MaterialsPage() {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: "name", direction: "asc" })
   const [groupBy, setGroupBy] = useState<string>("")
   const [searchTerm, setSearchTerm] = useState("")
+  const [selectedProcessIds, setSelectedProcessIds] = useState<string[]>([])
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
 
@@ -81,12 +84,19 @@ export default function MaterialsPage() {
 
   const handleEdit = (material: Material) => {
     setEditingMaterial(material)
+    setSelectedProcessIds(material.processIds || [])
     setIsDialogOpen(true)
   }
 
   const handleAdd = () => {
     setEditingMaterial(null)
+    setSelectedProcessIds([])
     setIsDialogOpen(true)
+  }
+
+  const handleDialogClose = () => {
+    setIsDialogOpen(false)
+    setSelectedProcessIds([])
   }
 
   const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -101,7 +111,7 @@ export default function MaterialsPage() {
       density: parseFloat(formData.get('density') as string),
       unit: formData.get('unit') as string || 'lb',
       active: formData.get('active') === 'on',
-      processIds: [] // TODO: Extract from checkboxes
+      processIds: selectedProcessIds
     }
 
     try {
@@ -110,7 +120,7 @@ export default function MaterialsPage() {
       } else {
         await createMaterial.mutateAsync(materialData)
       }
-      setIsDialogOpen(false)
+      handleDialogClose()
     } catch (error) {
       console.error('Error saving material:', error)
     }
@@ -235,15 +245,14 @@ export default function MaterialsPage() {
     )
   }
 
-  const handleImport = (importedData: any[]) => {
-    const newMaterials = importedData.map((item, index) => ({
-      id: (Date.now() + index).toString(),
+  const handleImport = async (importedData: any[]) => {
+    const materialsToCreate = importedData.map((item) => ({
       name: item.name || "",
       cost: Number(item.cost) || 0,
       markup: Number(item.markup) || 0,
       density: Number(item.density) || 0,
       unit: item.unit || "lb",
-      processes:
+      processIds:
         typeof item.processes === "string"
           ? item.processes
               .split(";")
@@ -253,10 +262,19 @@ export default function MaterialsPage() {
       active: item.active !== undefined ? item.active : true,
     }))
 
-    // Note: CSV import would need to call the API to create materials
-    // For now, this is a placeholder for the import functionality
-    console.log('Would create materials via API:', newMaterials)
-    console.log(`Imported ${newMaterials.length} materials`)
+    try {
+      // Create materials one by one using the API
+      const results = await Promise.allSettled(
+        materialsToCreate.map(materialData => createMaterial.mutateAsync(materialData))
+      )
+      
+      const successful = results.filter(result => result.status === 'fulfilled').length
+      const failed = results.filter(result => result.status === 'rejected').length
+      
+      console.log(`Successfully imported ${successful} materials${failed > 0 ? `, ${failed} failed` : ''}`)
+    } catch (error) {
+      console.error('Failed to import materials:', error)
+    }
   }
 
   return (
@@ -420,7 +438,7 @@ export default function MaterialsPage() {
           </CardContent>
         </Card>
 
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog open={isDialogOpen} onOpenChange={handleDialogClose}>
           <DialogContent className="sm:max-w-[500px] bg-[#fefefe] rounded-2xl border-0 shadow-xl">
             <form onSubmit={handleSave}>
               <DialogHeader>
@@ -490,12 +508,24 @@ export default function MaterialsPage() {
               <input type="hidden" name="unit" value="lb" />
               <div className="grid gap-3">
                 <Label className="text-sm font-medium text-[#525253]">Compatible Processes</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  {["CNC Milling", "CNC Turning", "5-Axis", "Wire EDM"].map((process) => (
-                    <div key={process} className="flex items-center space-x-2">
-                      <Checkbox id={process} defaultChecked={editingMaterial?.processes.includes(process)} />
-                      <Label htmlFor={process} className="text-sm text-[#525253]">
-                        {process}
+                <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto">
+                  {processesLoading ? (
+                    <div className="col-span-2 text-center text-slate-500 text-sm">Loading processes...</div>
+                  ) : processes.map((process) => (
+                    <div key={process.id} className="flex items-center space-x-2">
+                      <Checkbox 
+                        id={process.id} 
+                        checked={selectedProcessIds.includes(process.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedProcessIds([...selectedProcessIds, process.id])
+                          } else {
+                            setSelectedProcessIds(selectedProcessIds.filter(id => id !== process.id))
+                          }
+                        }}
+                      />
+                      <Label htmlFor={process.id} className="text-sm text-[#525253]">
+                        {process.name}
                       </Label>
                     </div>
                   ))}
@@ -506,7 +536,7 @@ export default function MaterialsPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setIsDialogOpen(false)}
+                  onClick={handleDialogClose}
                   className="border-[#908d8d] text-[#525253] hover:bg-[#e8dcaa]"
                 >
                   Cancel

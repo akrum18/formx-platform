@@ -242,9 +242,8 @@ export default function ProcessesPage() {
     )
   }
 
-  const handleImport = (importedData: any[]) => {
-    const newProcesses = importedData.map((item, index) => ({
-      id: (Date.now() + index).toString(),
+  const handleImport = async (importedData: any[]) => {
+    const processesToCreate = importedData.map((item) => ({
       name: item.name || "",
       category: item.category || categories[0] || "Uncategorized",
       setupTime: Number(item.setupTime) || 0,
@@ -254,10 +253,19 @@ export default function ProcessesPage() {
       active: item.active !== undefined ? item.active : true,
     }))
 
-    // Note: CSV import would need to call the API to create processes
-    // For now, this is a placeholder for the import functionality
-    console.log('Would create processes via API:', newProcesses)
-    console.log(`Imported ${newProcesses.length} processes`)
+    try {
+      // Create processes one by one using the API
+      const results = await Promise.allSettled(
+        processesToCreate.map(processData => createProcess.mutateAsync(processData))
+      )
+      
+      const successful = results.filter(result => result.status === 'fulfilled').length
+      const failed = results.filter(result => result.status === 'rejected').length
+      
+      console.log(`Successfully imported ${successful} processes${failed > 0 ? `, ${failed} failed` : ''}`)
+    } catch (error) {
+      console.error('Failed to import processes:', error)
+    }
   }
 
   return (
