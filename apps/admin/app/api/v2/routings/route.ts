@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../lib/prisma'
 import { requireAuth, requirePermission } from '../../../../lib/auth'
+import { syncRoutingPricing, validateRoutingForSync } from '../../../../lib/pricing-sync'
 
 const RoutingStepSchema = z.object({
   processId: z.string().min(1, 'Process ID is required'),
@@ -173,6 +174,18 @@ export const POST = requirePermission('routings', async (request: NextRequest, u
         }
       }
     })
+
+    // Synchronize pricing configurations with the new routing
+    // We run this after the routing is created to ensure data consistency
+    try {
+      const routingForSync = await validateRoutingForSync(newRouting.id)
+      if (routingForSync) {
+        await syncRoutingPricing(routingForSync, user.id, 'create')
+      }
+    } catch (error) {
+      console.error('Failed to sync pricing for new routing:', newRouting.id, error)
+      // Log error but don't fail the routing creation
+    }
 
     // Transform to match expected format
     const transformedSteps = newRouting.steps.map(step => ({

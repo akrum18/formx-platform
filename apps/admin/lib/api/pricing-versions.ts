@@ -138,6 +138,8 @@ export function useCreatePricingVersion() {
     mutationFn: (data: CreateVersionData) => pricingVersionsAPI.createVersion(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: pricingVersionsKeys.lists() })
+      // Also invalidate pricing config cache so margins page refreshes
+      queryClient.invalidateQueries({ queryKey: ['pricing-config'] })
     },
   })
 }

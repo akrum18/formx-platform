@@ -73,7 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!isLoading && user && pathname === "/login") {
       router.push("/")
     }
-  }, [user, isLoading, pathname, router])
+  }, [user, isLoading, pathname])
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {

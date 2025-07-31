@@ -222,5 +222,23 @@ export function getTierColor(tier: string) {
 }
 
 export function getProcessesInRouting(routingName: string): string[] {
-  return routingName.split(" - ").map((name) => name.trim())
+  // Handle multiple formats: "Process1 - Process2", "Process1 + Process2", "Process1, Process2"
+  const separators = [' - ', ' + ', ', ', ' / ']
+  
+  for (const separator of separators) {
+    if (routingName.includes(separator)) {
+      return routingName.split(separator).map((name) => name.trim())
+    }
+  }
+  
+  // If no separators found, return the whole name as a single process
+  return [routingName.trim()]
+}
+
+// Helper function to get processes from actual routing data
+export function getProcessesFromRouting(routing: any): string[] {
+  if (routing && routing.steps) {
+    return routing.steps.map((step: any) => step.processName)
+  }
+  return []
 }

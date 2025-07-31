@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,151 +5,128 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = "postgresql://ai:ai@localhost:5532/formx_platform"
-
 }
 
 model Finish {
-  id            String   @id @default(cuid())
-  name          String
-  type          String
-  costPerSqIn   Float
-  leadTimeDays  Int
-  description   String?
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  
-  // Relations
-  parts         Part[]
-  routings      Routing[]
-  
-  // Audit
-  createdBy     String
-  version       Int      @default(1)
-  
+  id           String    @id @default(cuid())
+  name         String
+  type         String
+  costPerSqIn  Float
+  leadTimeDays Int
+  description  String?
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  createdBy    String
+  version      Int       @default(1)
+  parts        Part[]
+  routings     Routing[]
+
   @@index([type])
   @@index([active])
 }
 
 model Material {
-  id            String   @id @default(cuid())
-  name          String
-  cost          Float
-  markup        Float
-  density       Float
-  unit          String
-  processes     Process[]
-  active        Boolean  @default(true)
-  
-  // Relations
-  parts         Part[]
-  
-  // Audit & versioning
-  version       Int      @default(1)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  createdBy     String
-  
+  id        String    @id @default(cuid())
+  name      String
+  cost      Float
+  markup    Float
+  density   Float
+  unit      String
+  active    Boolean   @default(true)
+  version   Int       @default(1)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String
+  parts     Part[]
+  processes Process[] @relation("MaterialToProcess")
+
   @@index([active])
 }
 
 model Process {
-  id                 String   @id @default(cuid())
-  name               String
-  setupTime          Int      // minutes
-  hourlyRate         Float
-  minimumCost        Float
+  id                   String        @id @default(cuid())
+  name                 String
+  setupTime            Int
+  hourlyRate           Float
+  minimumCost          Float
   complexityMultiplier Float
-  active             Boolean  @default(true)
-  category           String
-  
-  // Relations
-  materials         Material[]
-  routingSteps      RoutingStep[]
-  parts             Part[]
-  
-  // Audit
-  version           Int      @default(1)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  createdBy         String
-  
+  active               Boolean       @default(true)
+  category             String
+  version              Int           @default(1)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  createdBy            String
+  parts                Part[]
+  routingSteps         RoutingStep[]
+  materials            Material[]    @relation("MaterialToProcess")
+
   @@index([category])
   @@index([active])
 }
 
 model Routing {
-  id                  String   @id @default(cuid())
-  name                String
-  description         String?
-  category            String
-  steps               RoutingStep[]
-  totalSetupTime      Int
-  estimatedLeadTime   Int
-  active              Boolean  @default(true)
-  materialMarkup      Float
-  finishingCost      Float
-  isPrimaryPricingRoute Boolean @default(false)
-  
-  // Relations
-  finish             Finish?  @relation(fields: [finishId], references: [id])
-  finishId           String?
-  parts              Part[]
-  
-  // Audit
-  version            Int      @default(1)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  createdBy          String
-  
+  id                    String           @id @default(cuid())
+  name                  String
+  description           String?
+  category              String
+  totalSetupTime        Int
+  estimatedLeadTime     Int
+  active                Boolean          @default(true)
+  materialMarkup        Float
+  finishingCost         Float
+  isPrimaryPricingRoute Boolean          @default(false)
+  finishId              String?
+  version               Int              @default(1)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  createdBy             String
+  parts                 Part[]
+  finish                Finish?          @relation(fields: [finishId], references: [id])
+  routingPricing        RoutingPricing[]
+  steps                 RoutingStep[]
+
   @@index([category])
   @@index([active])
 }
 
 model RoutingStep {
-  id                 String   @id @default(cuid())
-  processId          String
-  processName        String
-  sequence           Int
-  setupTimeMultiplier Float
-  runtimeMultiplier  Float
-  notes              String?
-  setupTime          Int
-  hourlyRate         Float
-  minimumCost        Float
+  id                   String   @id @default(cuid())
+  processId            String
+  processName          String
+  sequence             Int
+  setupTimeMultiplier  Float
+  runtimeMultiplier    Float
+  notes                String?
+  setupTime            Int
+  hourlyRate           Float
+  minimumCost          Float
   complexityMultiplier Float
-  
-  // Relations
-  routing           Routing  @relation(fields: [routingId], references: [id], onDelete: Cascade)
-  routingId         String
-  process           Process  @relation(fields: [processId], references: [id])
-  
-  // Audit
-  version           Int      @default(1)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  createdBy         String
-  
+  routingId            String
+  version              Int      @default(1)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  createdBy            String
+  process              Process  @relation(fields: [processId], references: [id])
+  routing              Routing  @relation(fields: [routingId], references: [id], onDelete: Cascade)
+
   @@index([routingId])
   @@index([processId])
   @@index([sequence])
 }
 
-// Pricing Models
 model PricingConfiguration {
-  id                String   @id @default(cuid())
-  routings          RoutingPricing[]
-  defaultTierMultipliers Json      // Stored as JSON: { economy: number, standard: number, rush: number }
-  volumeBreaks      Json      // Stored as JSON array of VolumeBreak objects
-  minimumOrderValue Float
-  
-  // Audit
-  version          Int      @default(1)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  createdBy        String
-  status           String   @default("draft") // draft, published, archived
-  
+  id                     String           @id @default(cuid())
+  defaultTierMultipliers Json
+  volumeBreaks           Json
+  minimumOrderValue      Float
+  version                Int              @default(1)
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  createdBy              String
+  status                 String           @default("draft")
+  routings               RoutingPricing[]
+
   @@index([status])
 }
 
@@ -167,107 +141,98 @@ model FeatureFlag {
   updatedAt         DateTime @updatedAt
 }
 
-
 model RoutingPricing {
-  id                 String   @id @default(cuid())
-  routingId          String
-  routingName        String
-  category           String
-  baseCost           Float
-  materialMarkup     Float
-  finishingCost      Float
-  leadTime           Int
-  tierOverrides      Json?    // Stored as JSON for flexibility
-  
-  // Relations
-  configuration     PricingConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
-  configurationId   String
-  
-  // Audit
-  version           Int      @default(1)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  createdBy         String
-  
+  id                    String               @id @default(cuid())
+  routingId             String
+  category              String
+  baseCost              Float
+  materialMarkup        Float
+  finishingCost         Float
+  leadTime              Int
+  tierOverrides         Json?
+  configurationId       String
+  version               Int                  @default(1)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  createdBy             String
+  isBaseCostOverridden  Boolean              @default(false)
+  isFinishingOverridden Boolean              @default(false)
+  isLeadTimeOverridden  Boolean              @default(false)
+  isMarkupOverridden    Boolean              @default(false)
+  configuration         PricingConfiguration @relation(fields: [configurationId], references: [id], onDelete: Cascade)
+  routing               Routing              @relation(fields: [routingId], references: [id], onDelete: Cascade)
+
+  @@unique([routingId, configurationId])
   @@index([category])
   @@index([configurationId])
+  @@index([routingId])
 }
 
-// Part Data Model
 model Part {
-  id            String   @id @default(cuid())
-  partName      String
-  quantity      Int
-  tolerance     String
-  fileName      String
-  fileSize      Int
-  fileType      String
-  fileUrl       String?
-  
-  // Relations
-  process       Process  @relation(fields: [processId], references: [id])
-  processId     String
-  material      Material @relation(fields: [materialId], references: [id])
-  materialId    String
-  finish        Finish?  @relation(fields: [finishId], references: [id])
-  finishId      String?
-  routing       Routing? @relation(fields: [routingId], references: [id])
-  routingId     String?
-  
-  // Audit
-  version       Int      @default(1)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  createdBy     String
-  
+  id         String   @id @default(cuid())
+  partName   String
+  quantity   Int
+  tolerance  String
+  fileName   String
+  fileSize   Int
+  fileType   String
+  fileUrl    String?
+  processId  String
+  materialId String
+  finishId   String?
+  routingId  String?
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  createdBy  String
+  finish     Finish?  @relation(fields: [finishId], references: [id])
+  material   Material @relation(fields: [materialId], references: [id])
+  process    Process  @relation(fields: [processId], references: [id])
+  routing    Routing? @relation(fields: [routingId], references: [id])
+
   @@index([processId])
   @@index([materialId])
   @@index([finishId])
 }
 
-// User Management
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  name          String
-  role          String
-  permissions   Json     // Stored as JSON array of permission strings
-  password      String   // Hashed password
-  disabled      Boolean  @default(false)
-  
-  // Audit
-  version       Int      @default(1)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  lastLogin     DateTime?
-  
+  id          String    @id @default(cuid())
+  email       String    @unique
+  name        String
+  role        String
+  permissions Json
+  password    String
+  disabled    Boolean   @default(false)
+  version     Int       @default(1)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastLogin   DateTime?
+
   @@index([email])
   @@index([role])
 }
 
-// Audit Log
 model AuditLog {
-  id            String   @id @default(cuid())
-  action        String   // create, update, delete
-  entityType    String   // The model name (Finish, Material, etc.)
-  entityId      String   // The ID of the affected record
-  changes       Json     // The actual changes made
-  userId        String   // Who made the change
-  timestamp     DateTime @default(now())
-  metadata      Json?    // Additional context (client IP, user agent, etc.)
-  
+  id         String   @id @default(cuid())
+  action     String
+  entityType String
+  entityId   String
+  changes    Json
+  userId     String
+  timestamp  DateTime @default(now())
+  metadata   Json?
+
   @@index([entityType, entityId])
   @@index([timestamp])
   @@index([userId])
 }
 
-// Migration Backup for rollback capability
 model MigrationBackup {
-  id            String   @id @default(cuid())
-  name          String   @unique
-  data          Json     // Backup data
-  timestamp     DateTime @default(now())
-  
+  id        String   @id @default(cuid())
+  name      String   @unique
+  data      Json
+  timestamp DateTime @default(now())
+
   @@index([name])
   @@index([timestamp])
 }

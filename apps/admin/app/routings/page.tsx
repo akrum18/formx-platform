@@ -52,6 +52,7 @@ import {
   type RoutingStep as APIRoutingStep
 } from "@/lib/api/routings"
 import { useProcesses, type Process } from "@/lib/api/processes"
+import { STANDARD_CATEGORIES, getCategoriesFromRoutings } from "@/lib/categories"
 
 type RoutingStep = APIRoutingStep
 type Routing = APIRouting
@@ -904,12 +905,11 @@ function RoutingDialog({ isOpen, onClose, routing, processes, isLoading = false,
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Sheet Metal">Sheet Metal</SelectItem>
-                    <SelectItem value="Machining">Machining</SelectItem>
-                    <SelectItem value="Weldments">Weldments</SelectItem>
-                    <SelectItem value="Assembly">Assembly</SelectItem>
-                    <SelectItem value="Fabrication">Fabrication</SelectItem>
-                    <SelectItem value="Cutting">Cutting</SelectItem>
+                    {STANDARD_CATEGORIES.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

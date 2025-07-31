@@ -23,30 +23,25 @@ import {
   calculatePrice,
   getTierColor,
   getProcessesInRouting,
+  getProcessesFromRouting,
   type PricingConfiguration,
   type RoutingPricing,
   type TierOverride
 } from "@/lib/api/pricing-config"
 import { useCreatePricingVersion, generateVersionNumber } from "@/lib/api/pricing-versions"
+import { useProcesses } from "@/lib/api/processes"
+import { getCategoriesFromRoutings, getCategoriesFromPricing, getCategoryInfo } from "@/lib/categories"
 
 // Types are now imported from the API module
 
-// Mock process data for process pricing functionality
-const mockProcesses = [
-  { id: "1", name: "Laser Cutting", category: "Primary", hourlyRate: 95, setupTime: 15 },
-  { id: "2", name: "CNC Milling", category: "Primary", hourlyRate: 85, setupTime: 30 },
-  { id: "3", name: "CNC Turning", category: "Primary", hourlyRate: 75, setupTime: 20 },
-  { id: "4", name: "Press Brake Bending", category: "Primary", hourlyRate: 65, setupTime: 10 },
-  { id: "7", name: "TIG Welding", category: "Secondary", hourlyRate: 90, setupTime: 25 },
-  { id: "8", name: "MIG Welding", category: "Secondary", hourlyRate: 80, setupTime: 20 },
-  { id: "9", name: "Deburring", category: "Secondary", hourlyRate: 45, setupTime: 5 },
-  { id: "14", name: "Anodizing", category: "Finishing", hourlyRate: 70, setupTime: 25 },
-  { id: "13", name: "Powder Coating", category: "Finishing", hourlyRate: 65, setupTime: 20 },
-]
+// Import routing data for integrated pricing
+import { useRoutings } from "@/lib/api/routings"
 
 export default function MarginsPage() {
   // API hooks
   const { data: config, isLoading, error } = usePricingConfig()
+  const { data: processes, isLoading: processesLoading } = useProcesses()
+  const { data: routings, isLoading: routingsLoading } = useRoutings()
   const updatePricingConfig = useUpdatePricingConfig()
   const updateRoutingPricing = useUpdateRoutingPricing()
   const createVersion = useCreatePricingVersion()
@@ -67,13 +62,23 @@ export default function MarginsPage() {
 
   // Helper functions
   const getRoutingsByProcess = (processName: string) => {
-    if (!config?.routings) return []
-    return config.routings.filter((routing) => getProcessesInRouting(routing.routingName).includes(processName))
+    if (!routings) return []
+    return routings.filter((routing) => 
+      routing.steps.some(step => step.processName.toLowerCase().includes(processName.toLowerCase()))
+    )
   }
 
-  // Derived data
-  const categories = config?.routings ? [...new Set(config.routings.map((r) => r.category))] : []
-  const allProcesses = config?.routings ? [...new Set(config.routings.flatMap((r) => getProcessesInRouting(r.routingName)))] : []
+  const getActualRouting = (routingId: string) => {
+    return routings?.find(r => r.id === routingId)
+  }
+
+  // Derived data using centralized category management
+  const categories = config?.routings ? getCategoriesFromPricing(config.routings) : []
+  // Use real processes from the database and actual routing steps
+  const allProcesses = processes ? processes.filter(p => p.active).map(p => p.name) : []
+  const routingProcesses = routings ? 
+    [...new Set(routings.flatMap(r => r.steps.map(s => s.processName)))]
+    : []
 
   const handleSave = async () => {
     if (!config) return
@@ -187,61 +192,53 @@ export default function MarginsPage() {
   // Helper functions are now imported from the API module
 
   const updateProcessPricing = async (processName: string, newHourlyRate: number) => {
-    // This would update the process in the processes system
-    // and recalculate all routing costs that use this process
     console.log(`Updating ${processName} hourly rate to $${newHourlyRate}`)
-
-    if (!config) return
-
-    // Update routing base costs (simplified calculation)
-    const routingsToUpdate = config.routings.filter(routing => 
-      getProcessesInRouting(routing.routingName).includes(processName)
-    )
-
-    for (const routing of routingsToUpdate) {
-      const process = mockProcesses.find((p) => p.name === processName)
-      if (process) {
-        const rateDiff = newHourlyRate - process.hourlyRate
-        const costAdjustment = (rateDiff / 5) * 10
-        const newBaseCost = Math.max(routing.baseCost + costAdjustment, 0)
-
-        await updateRoutingPricing.mutateAsync({
-          routingId: routing.routingId,
-          data: { baseCost: newBaseCost }
-        })
-      }
-    }
-
-    // Update the mock process data
-    const processIndex = mockProcesses.findIndex((p) => p.name === processName)
-    if (processIndex !== -1) {
-      mockProcesses[processIndex].hourlyRate = newHourlyRate
-    }
+    
+    // Note: Process pricing updates should be done through the processes API
+    // This will automatically trigger routing pricing synchronization via database triggers
+    // For now, we'll show a message that this should be done through the processes module
+    alert('Process pricing should be updated through the Processes module. Changes will automatically sync to routing pricing.')
   }
 
   const filteredRoutings = config?.routings?.filter((routing) => {
-    // Search filter
-    const matchesSearch =
-      searchTerm === "" ||
-      routing.routingName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      routing.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getProcessesInRouting(routing.routingName).some((process) =>
-        process.toLowerCase().includes(searchTerm.toLowerCase()),
+    // Search filter - check routing name, category, and actual processes
+    let matchesSearch = true
+    if (searchTerm && searchTerm.trim() !== "") {
+      const searchLower = searchTerm.toLowerCase().trim()
+      const actualRouting = getActualRouting(routing.routingId)
+      
+      // Check routing name from actual routing or fallback to routingId
+      const routingNameMatch = (actualRouting?.name || routing.routingId).toLowerCase().includes(searchLower)
+      const categoryMatch = routing.category.toLowerCase().includes(searchLower)
+      
+      // Get processes from actual routing steps
+      const processes = actualRouting ? actualRouting.steps.map(s => s.processName) : []
+      const processMatch = processes.some((process) =>
+        process.toLowerCase().includes(searchLower)
       )
+      
+      matchesSearch = routingNameMatch || categoryMatch || processMatch
+    }
 
     // Category filter
     const matchesCategory = selectedCategories.length === 0 || selectedCategories.includes(routing.category)
 
-    // Process filter
-    const matchesProcess =
-      selectedProcesses.length === 0 ||
-      selectedProcesses.some((process) => getProcessesInRouting(routing.routingName).includes(process))
+    // Process filter - check actual routing processes
+    const matchesProcess = selectedProcesses.length === 0 || 
+      selectedProcesses.some((process) => {
+        const actualRouting = getActualRouting(routing.routingId)
+        const routingProcesses = actualRouting ? actualRouting.steps.map(s => s.processName) : []
+        return routingProcesses.some(p => 
+          p.toLowerCase().includes(process.toLowerCase()) ||
+          process.toLowerCase().includes(p.toLowerCase())
+        )
+      })
 
     return matchesSearch && matchesCategory && matchesProcess
   }) || []
 
   // Loading state
-  if (isLoading) {
+  if (isLoading || processesLoading || routingsLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100/50">
         <div className="max-w-7xl mx-auto p-8">
@@ -288,8 +285,25 @@ export default function MarginsPage() {
             <SidebarTrigger className="bg-white border border-slate-200 hover:bg-slate-50 rounded-xl p-2 shadow-sm" />
             <div className="flex items-center justify-between w-full">
               <div className="space-y-1">
-                <h1 className="text-4xl font-bold tracking-tight text-slate-900">Routing-Based Pricing</h1>
-                <p className="text-lg text-slate-600">Configure pricing multipliers and overrides for each routing</p>
+                <div className="flex items-center gap-3">
+                  <h1 className="text-4xl font-bold tracking-tight text-slate-900">Routing-Based Pricing</h1>
+                  {config.status === 'draft' && (
+                    <Badge variant="secondary" className="bg-orange-100 text-orange-700 border-orange-300">
+                      Draft Version
+                    </Badge>
+                  )}
+                  {config.status === 'published' && (
+                    <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-300">
+                      Published
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-lg text-slate-600">
+                  Configure pricing multipliers and overrides for each routing
+                  {config.status === 'draft' && (
+                    <span className="text-orange-600 ml-2">• Working on draft configuration</span>
+                  )}
+                </p>
               </div>
               <div className="flex items-center gap-3">
                 <Button
@@ -421,7 +435,12 @@ export default function MarginsPage() {
                 <div className="flex flex-wrap gap-2">
                   <span className="text-sm font-medium text-slate-600 mr-2">Processes:</span>
                   {allProcesses.slice(0, 8).map((process) => {
-                    const routingCount = getRoutingsByProcess(process).length
+                    // Count actual routings that use this process
+                    const routingCount = routings?.filter(routing => 
+                      routing.steps.some(step => 
+                        step.processName.toLowerCase().includes(process.toLowerCase())
+                      )
+                    ).length || 0
                     const isSelected = selectedProcesses.includes(process)
                     return (
                       <Button
@@ -447,19 +466,24 @@ export default function MarginsPage() {
                 </div>
 
                 {/* Active Filters Summary */}
-                {(searchTerm || selectedCategories.length > 0 || selectedProcesses.length > 0) && (
-                  <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
-                    <div className="flex items-center gap-2 text-sm text-blue-700">
-                      <Filter className="h-4 w-4" />
-                      <span className="font-medium">
-                        Showing {filteredRoutings.length} of {config.routings.length} routings
-                      </span>
-                      {searchTerm && <span>• Search: "{searchTerm}"</span>}
-                      {selectedCategories.length > 0 && <span>• Categories: {selectedCategories.join(", ")}</span>}
-                      {selectedProcesses.length > 0 && <span>• Processes: {selectedProcesses.join(", ")}</span>}
-                    </div>
+                <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+                  <div className="flex items-center gap-2 text-sm text-blue-700">
+                    <Filter className="h-4 w-4" />
+                    <span className="font-medium">
+                      Showing {filteredRoutings.length} of {config.routings.length} routings
+                    </span>
+                    {searchTerm && <span>• Search: "{searchTerm}"</span>}
+                    {selectedCategories.length > 0 && <span>• Categories: {selectedCategories.join(", ")}</span>}
+                    {selectedProcesses.length > 0 && <span>• Processes: {selectedProcesses.join(", ")}</span>}
                   </div>
-                )}
+                  {/* Debug info - remove after testing */}
+                  <div className="text-xs text-blue-600 mt-1">
+                    <div>Database processes ({allProcesses.length}): {allProcesses.join(", ")}</div>
+                    {routings && routings.length > 0 && (
+                      <div>Routing processes ({routingProcesses.length}): {routingProcesses.join(", ")}</div>
+                    )}
+                  </div>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="p-6">
@@ -527,8 +551,10 @@ export default function MarginsPage() {
             </CardHeader>
             <CardContent className="p-6">
               <div className="space-y-6">
-                {filteredRoutings.map((routing) => (
-                  <div
+                {filteredRoutings.map((routing) => {
+                  const actualRouting = getActualRouting(routing.routingId)
+                  return (
+                    <div
                     key={routing.routingId}
                     className="bg-gradient-to-br from-slate-50/50 to-white border border-slate-200 rounded-2xl p-6"
                   >
@@ -536,30 +562,50 @@ export default function MarginsPage() {
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-3">
                         <div>
-                          <h3 className="text-lg font-semibold text-slate-900">{routing.routingName}</h3>
+                          <h3 className="text-lg font-semibold text-slate-900">
+                            {actualRouting?.name || routing.routingId}
+                          </h3>
                           <p className="text-sm text-slate-600">
                             {routing.category} • Base Cost: ${routing.baseCost} • {routing.materialMarkup}% markup •{" "}
                             {routing.leadTime} days
+                            {actualRouting && (
+                              <span className="ml-2 text-blue-600">
+                                • {actualRouting.steps.length} steps • {actualRouting.totalSetupTime}min setup
+                              </span>
+                            )}
                           </p>
+                          {actualRouting && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              Steps: {actualRouting.steps.map(s => s.processName).join(' → ')}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => {
-                          const processes = getProcessesInRouting(routing.routingName)
-                          if (processes.length === 1) {
-                            const process = mockProcesses.find((p) => p.name === processes[0])
+                          if (actualRouting && actualRouting.steps.length === 1) {
+                            const step = actualRouting.steps[0]
+                            const process = processes?.find(p => p.id === step.processId)
                             if (process) {
-                              setSelectedProcess(process)
+                              setSelectedProcess({
+                                id: process.id,
+                                name: process.name,
+                                category: process.category,
+                                hourlyRate: step.hourlyRate,
+                                setupTime: step.setupTime
+                              })
                               setIsProcessPricingOpen(true)
                             }
                           }
                         }}
                         className="hover:bg-purple-50 hover:text-purple-600"
-                        disabled={getProcessesInRouting(routing.routingName).length > 1}
+                        disabled={!actualRouting || actualRouting.steps.length > 1}
                         title={
-                          getProcessesInRouting(routing.routingName).length > 1
+                          !actualRouting 
+                            ? "Routing not found in system"
+                            : actualRouting.steps.length > 1
                             ? "Multi-process routings require individual process updates"
                             : "Update base process pricing"
                         }
@@ -668,7 +714,7 @@ export default function MarginsPage() {
                       </div>
                     )}
                   </div>
-                ))}
+                )})}
               </div>
             </CardContent>
           </Card>
@@ -920,11 +966,14 @@ export default function MarginsPage() {
                         This process is used in {getRoutingsByProcess(selectedProcess.name).length} routing(s):
                       </p>
                       <div className="space-y-1">
-                        {getRoutingsByProcess(selectedProcess.name).map((routing) => (
-                          <div key={routing.routingId} className="text-sm text-orange-700">
-                            • {routing.routingName} (Current base cost: ${routing.baseCost})
+                        {getRoutingsByProcess(selectedProcess.name).map((routing) => {
+                          const pricingRouting = config?.routings.find(pr => pr.routingId === routing.id)
+                          return (
+                            <div key={routing.id} className="text-sm text-orange-700">
+                            • {routing.name} (Current base cost: ${pricingRouting?.baseCost || 'N/A'})
                           </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     </div>
                   </div>

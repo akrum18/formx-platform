@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../../lib/prisma'
 import { requireAuth, requirePermission } from '../../../../../lib/auth'
+import { syncRoutingPricing, validateRoutingForSync } from '../../../../../lib/pricing-sync'
 
 const RoutingStepSchema = z.object({
   processId: z.string().min(1, 'Process ID is required'),
@@ -192,6 +193,18 @@ export const PUT = requirePermission('routings', async (
       })
     })
 
+    // Synchronize pricing configurations with the updated routing
+    // We run this after the routing is updated to ensure data consistency
+    try {
+      const routingForSync = await validateRoutingForSync(id)
+      if (routingForSync) {
+        await syncRoutingPricing(routingForSync, user.id, 'update')
+      }
+    } catch (error) {
+      console.error('Failed to sync pricing for updated routing:', id, error)
+      // Log error but don't fail the routing update
+    }
+
     if (!updatedRouting) {
       return NextResponse.json(
         { code: 'NOT_FOUND', message: 'Routing not found' },
@@ -253,9 +266,17 @@ export const DELETE = requirePermission('routings', async (
   try {
     const { id } = await params
 
+    // Get routing data for pricing sync before deletion
+    const routingForSync = await validateRoutingForSync(id)
+
     // Use transaction to delete routing and its steps
     await prisma.$transaction(async (tx) => {
-      // Delete routing steps first (due to foreign key constraint)
+      // Delete routing pricing entries first (cascaded by FK, but explicit for clarity)
+      await tx.routingPricing.deleteMany({
+        where: { routingId: id }
+      })
+
+      // Delete routing steps (due to foreign key constraint)
       await tx.routingStep.deleteMany({
         where: { routingId: id }
       })
@@ -265,6 +286,18 @@ export const DELETE = requirePermission('routings', async (
         where: { id }
       })
     })
+
+    // Synchronize pricing configurations after successful deletion
+    // Note: The pricing entries are already deleted by the FK cascade,
+    // but we log the deletion for audit purposes
+    if (routingForSync) {
+      try {
+        await syncRoutingPricing(routingForSync, user.id, 'delete')
+      } catch (error) {
+        console.error('Failed to sync pricing for deleted routing:', id, error)
+        // Log error but don't fail the deletion
+      }
+    }
 
     return NextResponse.json({ message: 'Routing deleted successfully' })
   } catch (error: any) {

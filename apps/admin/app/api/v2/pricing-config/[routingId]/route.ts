@@ -19,7 +19,12 @@ const UpdateRoutingPricingSchema = z.object({
     economy: TierOverrideSchema.optional(),
     standard: TierOverrideSchema.optional(),
     rush: TierOverrideSchema.optional()
-  }).optional()
+  }).optional(),
+  // Override flags to preserve manual changes
+  isBaseCostOverridden: z.boolean().optional(),
+  isMarkupOverridden: z.boolean().optional(),
+  isFinishingOverridden: z.boolean().optional(),
+  isLeadTimeOverridden: z.boolean().optional()
 })
 
 export const GET = requirePermission('margins', async (
@@ -35,7 +40,10 @@ export const GET = requirePermission('margins', async (
       where: { status: 'published' },
       include: {
         routings: {
-          where: { routingId }
+          where: { routingId },
+          include: {
+            routing: true // Include actual routing data
+          }
         }
       }
     })
@@ -50,13 +58,17 @@ export const GET = requirePermission('margins', async (
     const routing = config.routings[0]
     const response = {
       routingId: routing.routingId,
-      routingName: routing.routingName,
+      routingName: routing.routing?.name || 'Unknown Routing',
       category: routing.category,
       baseCost: routing.baseCost,
       materialMarkup: routing.materialMarkup,
       finishingCost: routing.finishingCost,
       leadTime: routing.leadTime,
-      tierOverrides: routing.tierOverrides || {}
+      tierOverrides: routing.tierOverrides || {},
+      isBaseCostOverridden: routing.isBaseCostOverridden,
+      isMarkupOverridden: routing.isMarkupOverridden,
+      isFinishingOverridden: routing.isFinishingOverridden,
+      isLeadTimeOverridden: routing.isLeadTimeOverridden
     }
 
     return NextResponse.json(response)
@@ -97,7 +109,10 @@ export const PUT = requirePermission('margins', async (
       where: { status: 'published' },
       include: {
         routings: {
-          where: { routingId }
+          where: { routingId },
+          include: {
+            routing: true // Include actual routing data
+          }
         }
       }
     })
@@ -111,14 +126,34 @@ export const PUT = requirePermission('margins', async (
 
     const routingPricing = config.routings[0]
 
+    // Prepare update data with override flags
+    const updateDataWithFlags: any = { ...updateData }
+    
+    // Set override flags when values are manually changed
+    if (updateData.baseCost !== undefined) {
+      updateDataWithFlags.isBaseCostOverridden = true
+    }
+    if (updateData.materialMarkup !== undefined) {
+      updateDataWithFlags.isMarkupOverridden = true
+    }
+    if (updateData.finishingCost !== undefined) {
+      updateDataWithFlags.isFinishingOverridden = true
+    }
+    if (updateData.leadTime !== undefined) {
+      updateDataWithFlags.isLeadTimeOverridden = true
+    }
+
     // Update the routing pricing
     const updatedRouting = await prisma.routingPricing.update({
       where: { id: routingPricing.id },
       data: {
-        ...updateData,
+        ...updateDataWithFlags,
         tierOverrides: updateData.tierOverrides !== undefined 
           ? updateData.tierOverrides as any
           : routingPricing.tierOverrides
+      },
+      include: {
+        routing: true
       }
     })
 
@@ -130,13 +165,17 @@ export const PUT = requirePermission('margins', async (
 
     const response = {
       routingId: updatedRouting.routingId,
-      routingName: updatedRouting.routingName,
+      routingName: updatedRouting.routing?.name || 'Unknown Routing',
       category: updatedRouting.category,
       baseCost: updatedRouting.baseCost,
       materialMarkup: updatedRouting.materialMarkup,
       finishingCost: updatedRouting.finishingCost,
       leadTime: updatedRouting.leadTime,
-      tierOverrides: updatedRouting.tierOverrides || {}
+      tierOverrides: updatedRouting.tierOverrides || {},
+      isBaseCostOverridden: updatedRouting.isBaseCostOverridden,
+      isMarkupOverridden: updatedRouting.isMarkupOverridden,
+      isFinishingOverridden: updatedRouting.isFinishingOverridden,
+      isLeadTimeOverridden: updatedRouting.isLeadTimeOverridden
     }
 
     return NextResponse.json(response)

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { prisma } from '../../../../lib/prisma'
 import { requireAuth, requirePermission } from '../../../../lib/auth'
+import { bulkSyncRoutingsToConfiguration } from '../../../../lib/pricing-sync'
 
 // Validation schemas
 const TierOverrideSchema = z.object({
@@ -13,7 +14,7 @@ const TierOverrideSchema = z.object({
 
 const RoutingPricingSchema = z.object({
   routingId: z.string().min(1, 'Routing ID is required'),
-  routingName: z.string().min(1, 'Routing name is required'),
+  routingName: z.string().min(1, 'Routing name is required').optional(), // Optional since derived from routing
   category: z.string().min(1, 'Category is required'),
   baseCost: z.number().min(0, 'Base cost must be non-negative'),
   materialMarkup: z.number().min(0, 'Material markup must be non-negative'),
@@ -23,7 +24,12 @@ const RoutingPricingSchema = z.object({
     economy: TierOverrideSchema.optional(),
     standard: TierOverrideSchema.optional(),
     rush: TierOverrideSchema.optional()
-  }).optional()
+  }).optional(),
+  // Override flags to preserve manual changes
+  isBaseCostOverridden: z.boolean().optional().default(false),
+  isMarkupOverridden: z.boolean().optional().default(false),
+  isFinishingOverridden: z.boolean().optional().default(false),
+  isLeadTimeOverridden: z.boolean().optional().default(false)
 })
 
 const VolumeBreakSchema = z.object({
@@ -49,11 +55,17 @@ const PricingConfigSchema = z.object({
 
 export const GET = requirePermission('margins', async (request: NextRequest, user: any) => {
   try {
-    // Get the published pricing configuration
+    // Get the most recent pricing configuration (draft or published)
     const config = await prisma.pricingConfiguration.findFirst({
-      where: { status: 'published' },
+      where: { 
+        status: { in: ['draft', 'published'] }
+      },
       include: {
-        routings: true,
+        routings: {
+          include: {
+            routing: true // Include actual routing data
+          }
+        },
       },
       orderBy: { updatedAt: 'desc' },
     })
@@ -62,7 +74,38 @@ export const GET = requirePermission('margins', async (request: NextRequest, use
       // Return default configuration if none exists
       const defaultConfig = {
         id: 'default',
-        routings: [],
+        routings: [
+          {
+            routingId: 'routing-1',
+            routingName: 'Laser Cutting + Bending',
+            category: 'Sheet Metal',
+            baseCost: 45.0,
+            materialMarkup: 25,
+            finishingCost: 2.5,
+            leadTime: 5,
+            tierOverrides: {}
+          },
+          {
+            routingId: 'routing-2',
+            routingName: 'CNC Milling',
+            category: 'Machining',
+            baseCost: 85.0,
+            materialMarkup: 30,
+            finishingCost: 3.0,
+            leadTime: 7,
+            tierOverrides: {}
+          },
+          {
+            routingId: 'routing-3',
+            routingName: '3D Printing (FDM)',
+            category: 'Additive',
+            baseCost: 25.0,
+            materialMarkup: 40,
+            finishingCost: 1.5,
+            leadTime: 3,
+            tierOverrides: {}
+          }
+        ],
         globalSettings: {
           defaultTierMultipliers: {
             economy: 0.9,
@@ -90,13 +133,18 @@ export const GET = requirePermission('margins', async (request: NextRequest, use
       id: config.id,
       routings: config.routings.map(r => ({
         routingId: r.routingId,
-        routingName: r.routingName,
+        routingName: r.routing?.name || 'Unknown Routing', // Get name from actual routing
         category: r.category,
         baseCost: r.baseCost,
         materialMarkup: r.materialMarkup,
         finishingCost: r.finishingCost,
         leadTime: r.leadTime,
-        tierOverrides: r.tierOverrides || {}
+        tierOverrides: r.tierOverrides || {},
+        // Include override flags for UI
+        isBaseCostOverridden: r.isBaseCostOverridden,
+        isMarkupOverridden: r.isMarkupOverridden,
+        isFinishingOverridden: r.isFinishingOverridden,
+        isLeadTimeOverridden: r.isLeadTimeOverridden
       })),
       globalSettings: {
         defaultTierMultipliers: config.defaultTierMultipliers,
@@ -137,10 +185,13 @@ export const PUT = requirePermission('margins', async (request: NextRequest, use
 
     const { routings, globalSettings } = validation.data
 
-    // Get or create pricing configuration
+    // Get or create pricing configuration (prefer draft, then published)
     let config = await prisma.pricingConfiguration.findFirst({
-      where: { status: 'published' },
-      include: { routings: true }
+      where: { 
+        status: { in: ['draft', 'published'] }
+      },
+      include: { routings: true },
+      orderBy: { updatedAt: 'desc' }
     })
 
     if (!config) {
@@ -175,26 +226,51 @@ export const PUT = requirePermission('margins', async (request: NextRequest, use
 
     // Create new routing pricing records
     if (routings.length > 0) {
-      await prisma.routingPricing.createMany({
-        data: routings.map(r => ({
-          configurationId: config.id,
-          routingId: r.routingId,
-          routingName: r.routingName,
-          category: r.category,
-          baseCost: r.baseCost,
-          materialMarkup: r.materialMarkup,
-          finishingCost: r.finishingCost,
-          leadTime: r.leadTime,
-          tierOverrides: r.tierOverrides as any,
-          createdBy: user.id,
-        }))
+      // Validate that all routing IDs exist
+      const routingIds = routings.map(r => r.routingId)
+      const existingRoutings = await prisma.routing.findMany({
+        where: { id: { in: routingIds } },
+        select: { id: true, name: true }
       })
+
+      const validRoutings = routings.filter(r => 
+        existingRoutings.some(er => er.id === r.routingId)
+      )
+
+      if (validRoutings.length > 0) {
+        await prisma.routingPricing.createMany({
+          data: validRoutings.map(r => ({
+            configurationId: config.id,
+            routingId: r.routingId,
+            category: r.category,
+            baseCost: r.baseCost,
+            materialMarkup: r.materialMarkup,
+            finishingCost: r.finishingCost,
+            leadTime: r.leadTime,
+            tierOverrides: r.tierOverrides as any,
+            isBaseCostOverridden: r.isBaseCostOverridden || false,
+            isMarkupOverridden: r.isMarkupOverridden || false,
+            isFinishingOverridden: r.isFinishingOverridden || false,
+            isLeadTimeOverridden: r.isLeadTimeOverridden || false,
+            createdBy: user.id,
+          }))
+        })
+      }
+    } else {
+      // If no routings provided, bulk sync existing routings
+      await bulkSyncRoutingsToConfiguration(config.id, user.id)
     }
 
     // Get updated configuration with routings
     const finalConfig = await prisma.pricingConfiguration.findUnique({
       where: { id: config.id },
-      include: { routings: true }
+      include: { 
+        routings: {
+          include: {
+            routing: true
+          }
+        }
+      }
     })
 
     // Transform to API format
@@ -202,13 +278,17 @@ export const PUT = requirePermission('margins', async (request: NextRequest, use
       id: finalConfig!.id,
       routings: finalConfig!.routings.map(r => ({
         routingId: r.routingId,
-        routingName: r.routingName,
+        routingName: r.routing?.name || 'Unknown Routing',
         category: r.category,
         baseCost: r.baseCost,
         materialMarkup: r.materialMarkup,
         finishingCost: r.finishingCost,
         leadTime: r.leadTime,
-        tierOverrides: r.tierOverrides || {}
+        tierOverrides: r.tierOverrides || {},
+        isBaseCostOverridden: r.isBaseCostOverridden,
+        isMarkupOverridden: r.isMarkupOverridden,
+        isFinishingOverridden: r.isFinishingOverridden,
+        isLeadTimeOverridden: r.isLeadTimeOverridden
       })),
       globalSettings: {
         defaultTierMultipliers: finalConfig!.defaultTierMultipliers,

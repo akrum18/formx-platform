@@ -30,11 +30,13 @@ import {
   useToggleProcessActive,
   type Process as APIProcess
 } from "@/lib/api/processes"
+import { STANDARD_CATEGORIES } from "@/lib/categories"
 
 type Process = APIProcess
 
 
-const defaultCategories = ["Machining", "Advanced Machining", "EDM", "Additive", "Finishing"]
+// Use centralized category management
+const defaultCategories = [...STANDARD_CATEGORIES]
 
 const groupOptions = [
   { value: "active", label: "Status" },
