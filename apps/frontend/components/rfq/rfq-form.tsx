@@ -78,22 +78,21 @@ export function RFQForm() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
+        // Use local API routes that proxy to admin app
         // Fetch processes
-        const processesRes = await fetch(`${apiBaseUrl}/api/admin/processes`);
+        const processesRes = await fetch('/api/admin/processes');
         if (!processesRes.ok) throw new Error("Failed to fetch processes");
         const processesData = await processesRes.json();
         setProcesses(processesData);
 
         // Fetch materials
-        const materialsRes = await fetch(`${apiBaseUrl}/api/admin/materials`);
+        const materialsRes = await fetch('/api/admin/materials');
         if (!materialsRes.ok) throw new Error("Failed to fetch materials");
         const materialsData = await materialsRes.json();
         setMaterials(materialsData);
 
         // Fetch finishes (if applicable for new RFQ, though typically part of quote)
-        const finishesRes = await fetch(`${apiBaseUrl}/api/admin/finishes`);
+        const finishesRes = await fetch('/api/admin/finishes');
         if (!finishesRes.ok) throw new Error("Failed to fetch finishes");
         const finishesData = await finishesRes.json();
         setFinishes(finishesData);
@@ -114,14 +113,14 @@ export function RFQForm() {
 
   async function onSubmit(values: RFQFormValues) {
     try {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-      // In a real app, this would call an API to create the RFQ
-      const response = await fetch(`${apiBaseUrl}/rfqs`, {
+      // Use local API route for RFQ creation
+      const response = await fetch('/api/rfqs', {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(values),
+        credentials: 'same-origin', // Include cookies for authentication
       });
 
       if (!response.ok) {

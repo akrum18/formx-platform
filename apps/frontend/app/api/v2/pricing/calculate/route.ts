@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@formx/database'
-import { requireAuth, AuthError } from '@formx/auth'
+import { PrismaClient } from '@prisma/client'
+import { requireAuth, AuthError } from '../../auth-server'
 import { z } from 'zod'
+
+const prisma = new PrismaClient()
 
 // Validation schema for pricing calculation
 const PricingCalculationSchema = z.object({

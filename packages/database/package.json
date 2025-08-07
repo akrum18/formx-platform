@@ -2,8 +2,8 @@
   "name": "@formx/database",
   "version": "1.0.0",
   "description": "Shared database client for FormX platform",
-  "main": "src/index.js",
-  "types": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "generate": "prisma generate",

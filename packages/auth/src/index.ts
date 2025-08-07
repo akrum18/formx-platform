@@ -49,7 +49,7 @@ export class AuthService {
       expiresIn: JWT_EXPIRY,
       issuer: 'formx-api',
       audience: 'formx-platform'
-    })
+    } as any)
   }
 
   static async verifyAccessToken(token: string): Promise<JWTPayload> {
@@ -230,8 +230,7 @@ export async function createTestUser(email: string, password: string, role: stri
       password: hashedPassword,
       name: `Test User (${email})`,
       role,
-      permissions,
-      createdBy: 'system'
+      permissions
     }
   })
 }

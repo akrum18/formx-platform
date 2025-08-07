@@ -1,13 +1,24 @@
 import { cookies } from "next/headers"
+import { PrismaClient } from '@prisma/client'
+import jwt from 'jsonwebtoken'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL
+const prisma = new PrismaClient()
+const JWT_SECRET = process.env.JWT_SECRET || 'formx-dev-secret-change-in-production'
+
+interface JWTPayload {
+  sub: string;
+  email: string;
+  role: string;
+  permissions: string[];
+  exp: number;
+}
 
 export async function getCurrentUser() {
   const cookieStore = await cookies()
   const authToken = cookieStore.get("auth_token")
   const userType = cookieStore.get("user_type")
 
-  console.log("getCurrentUser - Auth token:", authToken?.value)
+  console.log("getCurrentUser - Auth token exists:", !!authToken?.value)
   console.log("getCurrentUser - User type:", userType?.value)
 
   if (!authToken?.value || !userType?.value) {
@@ -16,37 +27,59 @@ export async function getCurrentUser() {
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${authToken.value}`,
-      },
-      // Cache: 'no-store' is important for dynamic data in Next.js Server Components
-      cache: 'no-store',
-    })
-
-    if (!response.ok) {
-      // If token is invalid or expired, return null.
-      // Cookies must be cleared in a Server Action or Route Handler.
-      console.error("Failed to fetch current user from backend:", response.status, await response.text());
-      return null;
+    // Decode JWT token directly instead of making HTTP request
+    let decoded: JWTPayload
+    try {
+      decoded = jwt.verify(authToken.value, JWT_SECRET, {
+        issuer: 'formx-api',
+        audience: 'formx-platform'
+      }) as JWTPayload
+    } catch (error) {
+      console.log("getCurrentUser - Invalid token:", error)
+      return null
     }
 
-    const user = await response.json()
+    // Fetch user from database
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.sub },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        permissions: true,
+        disabled: true,
+        customer: {
+          select: {
+            id: true,
+            name: true,
+            company: true,
+            phone: true
+          }
+        }
+      }
+    })
 
-    console.log("getCurrentUser - Found user from backend:", user.email)
+    if (!user || user.disabled) {
+      console.log("getCurrentUser - User not found or disabled")
+      return null
+    }
+
+    console.log("getCurrentUser - Found user:", user.email)
 
     return {
       id: user.id,
       name: user.name,
       email: user.email,
-      company: user.company,
-      type: userType.value as "user" | "partner", // Ensure type is correct
-      // Add other fields relevant to user or partner if needed
-      ...(userType.value === "partner" && { partnerCode: user.partner_code }),
+      company: user.customer?.company || '',
+      type: userType.value as "user" | "partner",
+      permissions: Array.isArray(user.permissions) ? user.permissions as string[] : [],
+      customer: user.customer
     }
   } catch (error) {
-    console.error("Error fetching current user from backend:", error)
+    console.error("Error getting current user:", error)
     return null
+  } finally {
+    await prisma.$disconnect()
   }
 }

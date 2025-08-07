@@ -2,8 +2,19 @@
 
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
+import { PrismaClient } from '@prisma/client'
+import jwt from 'jsonwebtoken'
+import bcrypt from 'bcryptjs'
+import { z } from 'zod'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+const prisma = new PrismaClient()
+const JWT_SECRET = process.env.JWT_SECRET || 'formx-dev-secret-change-in-production'
+
+// Validation schema for login
+const LoginSchema = z.object({
+  email: z.string().email('Invalid email format'),
+  password: z.string().min(1, 'Password is required')
+})
 
 export async function loginUser(formData: FormData) {
   const email = formData.get("email") as string
@@ -11,28 +22,78 @@ export async function loginUser(formData: FormData) {
   const callbackUrl = formData.get("callbackUrl") as string
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded", // FastAPI expects this for OAuth2PasswordRequestForm
-      },
-      body: new URLSearchParams({
-        username: email,
-        password: password,
-      }).toString(),
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json();
+    console.log('Attempting login for:', email)
+    
+    // Validate input
+    const validationResult = LoginSchema.safeParse({ email, password })
+    if (!validationResult.success) {
       return {
         success: false,
-        message: errorData.detail || "Login failed",
+        message: validationResult.error.errors.map(e => e.message).join(', ')
       }
     }
 
-    const data = await response.json()
-    const accessToken = data.access_token
+    // Find user by email
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        permissions: true,
+        password: true,
+        disabled: true
+      }
+    })
 
+    if (!user) {
+      return {
+        success: false,
+        message: 'Invalid email or password'
+      }
+    }
+
+    if (user.disabled) {
+      return {
+        success: false,
+        message: 'User account is disabled'
+      }
+    }
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, user.password)
+    if (!isValidPassword) {
+      return {
+        success: false,
+        message: 'Invalid email or password'
+      }
+    }
+
+    // Create access token
+    const permissions = Array.isArray(user.permissions) ? user.permissions as string[] : []
+    const accessToken = jwt.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        permissions
+      },
+      JWT_SECRET,
+      { 
+        expiresIn: '24h',
+        issuer: 'formx-api',
+        audience: 'formx-platform'
+      }
+    )
+
+    // Update last login
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLogin: new Date() }
+    })
+
+    // Set cookies
     const cookieStore = await cookies()
     cookieStore.set("auth_token", accessToken, {
       httpOnly: true,
@@ -41,7 +102,6 @@ export async function loginUser(formData: FormData) {
       path: "/",
     })
 
-    // Assuming a successful login is for a 'user' type by default for this endpoint
     cookieStore.set("user_type", "user", {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -49,10 +109,13 @@ export async function loginUser(formData: FormData) {
       path: "/",
     })
 
+    console.log('Login successful for:', email)
+
     let redirectTo = "/dashboard"
     if (callbackUrl && callbackUrl.trim() !== "") {
       redirectTo = callbackUrl
     }
+    
     redirect(redirectTo)
 
   } catch (error) {
@@ -61,6 +124,8 @@ export async function loginUser(formData: FormData) {
       success: false,
       message: "An unexpected error occurred during login.",
     }
+  } finally {
+    await prisma.$disconnect()
   }
 }
 
@@ -82,9 +147,23 @@ export async function registerUser(formData: FormData) {
 
     if (!response.ok) {
       const errorData = await response.json();
+      let errorMessage = "Registration failed";
+      
+      if (errorData.detail) {
+        if (typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        } else if (Array.isArray(errorData.detail)) {
+          // Handle validation errors array
+          errorMessage = errorData.detail.map(err => err.msg || err.message || String(err)).join(', ');
+        } else if (typeof errorData.detail === 'object') {
+          // Handle single validation error object
+          errorMessage = errorData.detail.msg || errorData.detail.message || "Validation error";
+        }
+      }
+      
       return {
         success: false,
-        message: errorData.detail || "Registration failed",
+        message: errorMessage,
       }
     }
 
@@ -138,9 +217,23 @@ export async function loginPartner(formData: FormData) {
 
     if (!response.ok) {
       const errorData = await response.json();
+      let errorMessage = "Partner login failed";
+      
+      if (errorData.detail) {
+        if (typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        } else if (Array.isArray(errorData.detail)) {
+          // Handle validation errors array
+          errorMessage = errorData.detail.map(err => err.msg || err.message || String(err)).join(', ');
+        } else if (typeof errorData.detail === 'object') {
+          // Handle single validation error object
+          errorMessage = errorData.detail.msg || errorData.detail.message || "Validation error";
+        }
+      }
+      
       return {
         success: false,
-        message: errorData.detail || "Partner login failed",
+        message: errorMessage,
       }
     }
 

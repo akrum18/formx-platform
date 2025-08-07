@@ -37,7 +37,7 @@ export async function checkDatabaseHealth() {
     await prisma.$queryRaw`SELECT 1`
     return { status: 'healthy', timestamp: new Date() }
   } catch (error) {
-    return { status: 'unhealthy', error: error.message, timestamp: new Date() }
+    return { status: 'unhealthy', error: (error as Error).message, timestamp: new Date() }
   }
 }
 
@@ -73,7 +73,7 @@ export async function validateSchema() {
     return {
       schema_validated: false,
       all_tables_exist: false,
-      error: error.message,
+      error: (error as Error).message,
       timestamp: new Date()
     }
   }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@formx/database'
-import { requireAuth, AuthError } from '@formx/auth'
+import { PrismaClient } from '@prisma/client'
+import { requireAuth, AuthError } from '../../auth-server'
+
+const prisma = new PrismaClient()
 
 // GET /api/v2/parts - Get parts inventory
 export async function GET(request: NextRequest) {

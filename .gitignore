@@ -9,7 +9,12 @@ pnpm-debug.log*
 # Dependency directories
 node_modules/
 .pnpm-store/ # pnpm's global store, if not outside the repo
-
+# Claude Code files
+.claude/
+.claude
+CLAUDE.md
+claude-*
+.claude-*
 # Production build output
 .next/
 dist/
