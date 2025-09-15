@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '@formx/database'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
-
-const prisma = new PrismaClient()
 const JWT_SECRET = process.env.JWT_SECRET || 'formx-dev-secret-change-in-production'
 
 // Validation schema for login
@@ -123,7 +121,5 @@ export async function POST(request: NextRequest) {
       { detail: 'An unexpected error occurred during login' },
       { status: 500 }
     )
-  } finally {
-    await prisma.$disconnect()
   }
 }

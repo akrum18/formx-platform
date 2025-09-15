@@ -1,6 +1,6 @@
 import fetch from 'node-fetch'
 
-const BASE_URL = 'http://localhost:3001'
+const BASE_URL = 'http://localhost:4000'
 
 async function testSimpleAPI() {
   try {

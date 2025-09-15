@@ -103,7 +103,7 @@ WorkingDirectory=/var/www/formx-admin
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
 Environment=NODE_ENV=production
-Environment=PORT=3000
+Environment=PORT=4000
 
 [Install]
 WantedBy=multi-user.target
@@ -123,7 +123,7 @@ server {
     server_name admin.formx.com;
     
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://localhost:4000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -172,7 +172,7 @@ VALUES
 ### Health Check
 
 ```bash
-curl http://localhost:3000/api/v2/dashboard
+curl http://localhost:4000/api/v2/dashboard
 ```
 
 ### Logs

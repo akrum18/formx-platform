@@ -2,12 +2,10 @@
 
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '@formx/database'
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
-
-const prisma = new PrismaClient()
 const JWT_SECRET = process.env.JWT_SECRET || 'formx-dev-secret-change-in-production'
 
 // Validation schema for login
@@ -120,12 +118,20 @@ export async function loginUser(formData: FormData) {
 
   } catch (error) {
     console.error("Error during login:", error)
+    
+    // Log more details for debugging
+    if (error instanceof Error) {
+      console.error("Login error details:", {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      })
+    }
+
     return {
       success: false,
-      message: "An unexpected error occurred during login.",
+      message: "An unexpected error occurred during login. Please try again.",
     }
-  } finally {
-    await prisma.$disconnect()
   }
 }
 
@@ -137,41 +143,77 @@ export async function registerUser(formData: FormData) {
   const callbackUrl = formData.get("callbackUrl") as string
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ name, email, company, password }),
+    // Validate input
+    const validationSchema = z.object({
+      name: z.string().min(1, 'Name is required'),
+      email: z.string().email('Invalid email format'),
+      password: z.string().min(6, 'Password must be at least 6 characters')
     })
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      let errorMessage = "Registration failed";
-      
-      if (errorData.detail) {
-        if (typeof errorData.detail === 'string') {
-          errorMessage = errorData.detail;
-        } else if (Array.isArray(errorData.detail)) {
-          // Handle validation errors array
-          errorMessage = errorData.detail.map(err => err.msg || err.message || String(err)).join(', ');
-        } else if (typeof errorData.detail === 'object') {
-          // Handle single validation error object
-          errorMessage = errorData.detail.msg || errorData.detail.message || "Validation error";
-        }
-      }
-      
+    const validationResult = validationSchema.safeParse({ name, email, password })
+    if (!validationResult.success) {
       return {
         success: false,
-        message: errorMessage,
+        message: validationResult.error.errors.map(e => e.message).join(', ')
       }
     }
 
-    const data = await response.json()
-    // Assuming registration directly logs in and returns an access token
-    // If not, you'd need to call loginUser here or redirect to login page
-    const accessToken = data.access_token // Assuming backend returns access_token on successful registration
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email }
+    })
 
+    if (existingUser) {
+      return {
+        success: false,
+        message: 'User with this email already exists'
+      }
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12)
+
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        email,
+        name,
+        password: hashedPassword,
+        role: 'user',
+        permissions: [],
+        disabled: false
+      }
+    })
+
+    // Create customer record if company provided
+    if (company && company.trim() !== "") {
+      await prisma.customer.create({
+        data: {
+          name,
+          company,
+          email,
+          userId: user.id
+        }
+      })
+    }
+
+    // Create access token
+    const accessToken = jwt.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        role: user.role,
+        permissions: []
+      },
+      JWT_SECRET,
+      { 
+        expiresIn: '24h',
+        issuer: 'formx-api',
+        audience: 'formx-platform'
+      }
+    )
+
+    // Set cookies
     const cookieStore = await cookies()
     cookieStore.set("auth_token", accessToken, {
       httpOnly: true,
@@ -185,6 +227,8 @@ export async function registerUser(formData: FormData) {
       maxAge: 60 * 60 * 24 * 7, // 1 week
       path: "/",
     })
+
+    console.log('Registration successful for:', email)
 
     let redirectTo = "/dashboard"
     if (callbackUrl && callbackUrl.trim() !== "") {
@@ -207,55 +251,11 @@ export async function loginPartner(formData: FormData) {
   const partnerCode = formData.get("partnerCode") as string
 
   try {
-    const response = await fetch(`${API_BASE_URL}/api/auth/partner/login`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ email, password, partner_code: partnerCode }), // Ensure partner_code matches backend expected field
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      let errorMessage = "Partner login failed";
-      
-      if (errorData.detail) {
-        if (typeof errorData.detail === 'string') {
-          errorMessage = errorData.detail;
-        } else if (Array.isArray(errorData.detail)) {
-          // Handle validation errors array
-          errorMessage = errorData.detail.map(err => err.msg || err.message || String(err)).join(', ');
-        } else if (typeof errorData.detail === 'object') {
-          // Handle single validation error object
-          errorMessage = errorData.detail.msg || errorData.detail.message || "Validation error";
-        }
-      }
-      
-      return {
-        success: false,
-        message: errorMessage,
-      }
+    // For now, return an error message since partner login is not fully implemented
+    return {
+      success: false,
+      message: "Partner login is not yet implemented. Please contact support."
     }
-
-    const data = await response.json()
-    const accessToken = data.access_token
-
-    const cookieStore = await cookies()
-    cookieStore.set("auth_token", accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 7, // 1 week
-      path: "/",
-    })
-    cookieStore.set("user_type", "partner", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 7, // 1 week
-      path: "/",
-    })
-
-    redirect("/channel-partner") // Partners always go to partner portal
-
   } catch (error) {
     console.error("Error during partner login:", error)
     return {

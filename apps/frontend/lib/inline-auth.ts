@@ -1,8 +1,6 @@
 import { NextRequest } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '@formx/database'
 import jwt from 'jsonwebtoken'
-
-const prisma = new PrismaClient()
 const JWT_SECRET = process.env.JWT_SECRET || 'formx-dev-secret-change-in-production'
 
 // Inline auth function for API routes

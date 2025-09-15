@@ -43,7 +43,7 @@ const next = require('next')
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
-const port = process.env.PORT || 3000
+const port = process.env.PORT || 4000
 const app = next({ dev, hostname, port })
 const handle = app.getRequestHandler()
 
@@ -69,7 +69,7 @@ module.exports = {
     exec_mode: 'cluster',
     env: {
       NODE_ENV: 'production',
-      PORT: 3000
+      PORT: 4000
     },
     error_file: './logs/err.log',
     out_file: './logs/out.log',

@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken'
 
 const prisma = new PrismaClient()
 const JWT_SECRET = process.env.JWT_SECRET || 'formx-dev-secret-change-in-production'
-const BASE_URL = 'http://localhost:3001'
+const BASE_URL = 'http://localhost:4000'
 
 // Create test JWT token
 function createTestToken(userId: string, email: string) {

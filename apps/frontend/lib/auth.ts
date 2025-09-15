@@ -1,8 +1,6 @@
 import { cookies } from "next/headers"
-import { PrismaClient } from '@prisma/client'
+import { prisma } from '@formx/database'
 import jwt from 'jsonwebtoken'
-
-const prisma = new PrismaClient()
 const JWT_SECRET = process.env.JWT_SECRET || 'formx-dev-secret-change-in-production'
 
 interface JWTPayload {
@@ -79,7 +77,5 @@ export async function getCurrentUser() {
   } catch (error) {
     console.error("Error getting current user:", error)
     return null
-  } finally {
-    await prisma.$disconnect()
   }
 }
